@@ -1,0 +1,48 @@
+# Dependências
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+package-lock.json
+
+# Arquivos de ambiente
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Diretórios de logs e arquivos temporários
+logs/
+temp/
+*.log
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+
+# Arquivos de IDE/editores
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Arquivos de build
+dist/
+build/
+
+# Arquivos temporários de áudio
+*.mp3
+*.wav
+*.ogg
+*.m4a
+
+# Arquivos temporários de imagem
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+
+# Arquivos temporários de PDF
+*.pdf

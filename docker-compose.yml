@@ -1,0 +1,46 @@
+version: '3'
+
+services:
+  chatwoot-pipedrive:
+    # Duas opções: usar build local OU imagem pré-construída
+    
+    # Opção 1: Build local (comente esta seção se usar a Opção 2)
+    build:
+      context: .
+      dockerfile: Dockerfile
+      
+    # Opção 2: Imagem pré-construída (descomente e ajuste se preferir esta opção)
+    # image: authbrasil/chatwoot-pipedrive:latest
+    container_name: chatwoot-pipedrive
+    restart: always
+    # Removido o mapeamento de porta direto, pois o Traefik gerenciará isso
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - CHATWOOT_API_TOKEN=${CHATWOOT_API_TOKEN}
+      - CHATWOOT_BASE_URL=${CHATWOOT_BASE_URL}
+      - PIPEDRIVE_API_TOKEN=${PIPEDRIVE_API_TOKEN}
+      - PIPEDRIVE_BASE_URL=${PIPEDRIVE_BASE_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./logs:/app/logs
+      - ./temp:/app/temp
+    networks:
+      - network_public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.chatwoot-pipedrive.rule=Host(`webhook.authbrasil.app.br`)"
+      - "traefik.http.services.chatwoot-pipedrive.loadbalancer.server.port=3000"
+      - "traefik.http.routers.chatwoot-pipedrive.entrypoints=websecure"
+      - "traefik.http.routers.chatwoot-pipedrive.tls=true"
+      - "traefik.http.routers.chatwoot-pipedrive.tls.certresolver=myresolver"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  network_public:
+    external: true
