@@ -13,13 +13,16 @@ services:
       mkdir -p /app/logs /app/temp && \
       cd /app && \
       echo "Preparando o código..." && \
-      if [ -d .git ]; then \
+      if [ -d /app/.git ]; then \
         echo "Atualizando repositório existente" && \
         git pull; \
       else \
         echo "Clonando novo repositório" && \
-        rm -rf /app/* && \
-        git clone https://github.com/Nilmarsilva/chatwoot-pipedrive.git .; \
+        # Excluir todos os arquivos exceto logs e temp
+        find /app -mindepth 1 -maxdepth 1 ! -name logs ! -name temp -exec rm -rf {} \; && \
+        git clone https://github.com/Nilmarsilva/chatwoot-pipedrive.git /tmp/repo && \
+        cp -r /tmp/repo/. /app/ && \
+        rm -rf /tmp/repo; \
       fi && \
       npm install && \
       npm run start:new'
