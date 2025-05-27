@@ -2,13 +2,29 @@ version: '3.8'
 
 services:
   chatwoot-pipedrive:
-    # Usando imagem base do Node.js 16 com Alpine
-    image: node:16-alpine
+    # Atualizando para Node.js 18
+    image: node:18-alpine
     
-    # Comando personalizado para instalação e inicialização
     command: |
       sh -c 'echo "Instalando dependências do sistema..." && \
-      apk add --no-cache ffmpeg ffmpeg-libs git python3 make g++ && \
+      apk add --no-cache \
+        ffmpeg \
+        ffmpeg-libs \
+        git \
+        python3 \
+        make \
+        g++ \
+        cairo-dev \
+        jpeg-dev \
+        pango-dev \
+        giflib-dev \
+        pkgconfig \
+        pango \
+        pkgconf \
+        pixman-dev \
+        cairo \
+        cairo-tools \
+        && \
       mkdir -p /app/logs /app/temp /app/data && \
       chmod -R 777 /app/logs /app/temp /app/data && \
       cd /app && \
@@ -24,7 +40,7 @@ services:
         rm -rf /tmp/repo; \
       fi && \
       echo "Instalando dependências do Node.js..." && \
-      npm install --no-optional && \
+      npm install --omit=optional && \
       echo "Iniciando aplicação..." && \
       npm run start:new'
     
