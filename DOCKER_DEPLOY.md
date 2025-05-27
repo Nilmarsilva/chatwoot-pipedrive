@@ -86,7 +86,7 @@ zip -r chatwoot-pipedrive.zip . -x "node_modules/*" "logs/*" "temp/*"
 Crie um registro DNS do tipo CNAME para o subdomínio que será usado pelo webhook:
 
 ```
-webhook.authbrasil.app.br  CNAME  seu-servidor-vps.authbrasil.app.br
+webhookdata.authbrasil.app.br  CNAME  seu-servidor-vps.authbrasil.app.br
 ```
 
 ### Configurar Traefik (Já configurado no docker-compose.yml)
@@ -111,7 +111,7 @@ Certifique-se de que:
 ### Configurar Webhook no Chatwoot
 
 Configure o webhook no Chatwoot para apontar para:
-`https://webhook.authbrasil.app.br/webhook`
+`https://webhookdata.authbrasil.app.br/webhook`
 
 ## Monitoramento e Manutenção
 
