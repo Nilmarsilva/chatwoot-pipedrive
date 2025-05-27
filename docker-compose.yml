@@ -11,7 +11,7 @@ services:
       sh -c "apk add --no-cache ffmpeg git &&
              mkdir -p /app/logs /app/temp &&
              cd /app &&
-             if [ "$(ls -A /app)" ]; then
+             if [ "$$(ls -A /app)" ]; then
                echo 'Directory not empty, pulling latest changes' &&
                if [ -d .git ]; then
                  git pull
