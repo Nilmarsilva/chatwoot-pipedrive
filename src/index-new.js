@@ -34,93 +34,53 @@ const logRequest = (req, message) => {
 
 // Função para buscar todo o histórico do Chatwoot com paginação
 async function getChatwootMessages(conversationId, accountId) {
-  const messages = [];
-  let page = 1;
-  const perPage = 100; // Número de itens por página
-  let totalMessages = 0;
-  let totalPages = 1;
-  let hasMorePages = true;
+  const allMessages = [];
+  let hasMoreMessages = true;
+  let beforeId = null;
+  let requestCount = 0;
+  const maxRequests = 100; // Limite de segurança para evitar loops infinitos
 
   try {
     console.log(`[Chatwoot] Iniciando busca de mensagens da conversa ${conversationId}...`);
     
-    // Primeiro, vamos verificar quantas páginas existem
-    console.log(`[Chatwoot] Verificando total de mensagens...`);
-    const initialResponse = await axios.get(
-      `${process.env.CHATWOOT_BASE_URL}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
-      {
-        params: { page: 1, per_page: 1 },
-        headers: {
-          'api_access_token': process.env.CHATWOOT_API_TOKEN,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'User-Agent': 'chatwoot-pipedrive/1.0'
-        }
+    while (hasMoreMessages && requestCount < maxRequests) {
+      requestCount++;
+      
+      // Parâmetros da requisição
+      const params = { per_page: 100 }; // Máximo de itens por página
+      if (beforeId) {
+        params.before = beforeId;
       }
-    );
-
-    // Extrair informações de paginação do cabeçalho
-    const totalCount = parseInt(initialResponse.headers['total-count'] || '0', 10);
-    totalPages = Math.ceil(totalCount / perPage);
-    
-    console.log(`[Chatwoot] Total de mensagens: ${totalCount} (${totalPages} páginas)`);
-    
-    // Se não houver mensagens, retorna array vazio
-    if (totalCount === 0) {
-      console.log('[Chatwoot] Nenhuma mensagem encontrada na conversa');
-      return [];
-    }
-    
-    // Buscar todas as páginas em paralelo para melhor performance
-    const fetchPromises = [];
-    const pagesToFetch = Math.min(totalPages, 10); // Limita a 10 páginas para evitar sobrecarga
-    
-    console.log(`[Chatwoot] Buscando ${pagesToFetch} páginas de mensagens...`);
-    
-    for (let i = 1; i <= pagesToFetch; i++) {
-      fetchPromises.push(
-        axios.get(
-          `${process.env.CHATWOOT_BASE_URL}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
-          {
-            params: { page: i, per_page: perPage },
-            headers: {
-              'api_access_token': process.env.CHATWOOT_API_TOKEN,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'User-Agent': 'chatwoot-pipedrive/1.0'
-            }
+      
+      console.log(`[Chatwoot] Buscando mensagens ${beforeId ? `anteriores a ${beforeId}` : 'mais recentes'}...`);
+      
+      const response = await axios.get(
+        `${process.env.CHATWOOT_BASE_URL}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+        {
+          params,
+          headers: {
+            'api_access_token': process.env.CHATWOOT_API_TOKEN,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'chatwoot-pipedrive/1.0'
           }
-        ).then(response => ({
-          page: i,
-          data: response.data,
-          status: response.status,
-          headers: response.headers
-        })).catch(error => ({
-          page: i,
-          error: error.message,
-          status: error.response?.status
-        }))
+        }
       );
-    }
-    
-    // Aguardar todas as requisições
-    const results = await Promise.all(fetchPromises);
-    
-    // Processar resultados
-    for (const result of results) {
-      if (result.error) {
-        console.error(`[Chatwoot] Erro ao buscar página ${result.page}:`, result.error);
-        continue;
+      
+      const pageMessages = response.data.payload || response.data.data || [];
+      console.log(`[Chatwoot] ${pageMessages.length} mensagens recebidas`);
+      
+      if (pageMessages.length === 0) {
+        console.log('[Chatwoot] Nenhuma mensagem adicional encontrada');
+        hasMoreMessages = false;
+        break;
       }
       
-      const pageMessages = result.data.payload || result.data.data || [];
-      console.log(`[Chatwoot] Página ${result.page}: ${pageMessages.length} mensagens recebidas`);
-      
-      // Filtrar apenas mensagens de usuário (não-sistema)
+      // Filtrar mensagens do sistema
       const validMessages = pageMessages.filter(msg => {
         const isSystemMessage = msg.message_type === 2 || msg.private === true;
         if (isSystemMessage) {
-          console.log(`[Chatwoot] Mensagem do sistema ignorada (página ${result.page}):`, {
+          console.log(`[Chatwoot] Mensagem do sistema ignorada:`, {
             id: msg.id,
             content: msg.content?.substring(0, 100) + (msg.content?.length > 100 ? '...' : ''),
             message_type: msg.message_type,
@@ -131,15 +91,38 @@ async function getChatwootMessages(conversationId, accountId) {
         return true;
       });
       
-      messages.push(...validMessages);
-      totalMessages += validMessages.length;
+      // Adicionar mensagens válidas ao array principal
+      allMessages.push(...validMessages);
+      
+      // Atualizar o ID para a próxima página (mensagens mais antigas)
+      // Ordenamos por ID para garantir que pegamos a mensagem mais antiga
+      const sortedMessages = [...pageMessages].sort((a, b) => a.id - b.id);
+      const oldestMessage = sortedMessages[0];
+      
+      if (oldestMessage && oldestMessage.id !== beforeId) {
+        beforeId = oldestMessage.id;
+        console.log(`[Chatwoot] Próximo ID para paginação: ${beforeId}`);
+      } else {
+        // Se não conseguimos obter um novo ID, paramos a paginação
+        console.log('[Chatwoot] Não foi possível obter mais mensagens');
+        hasMoreMessages = false;
+      }
+      
+      // Se recebemos menos mensagens que o máximo, não há mais páginas
+      if (pageMessages.length < 100) {
+        console.log('[Chatwoot] Todas as mensagens foram buscadas');
+        hasMoreMessages = false;
+      }
+      
+      // Pequena pausa entre as requisições para evitar sobrecarga
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
     
     // Ordenar mensagens por data de criação (mais antigas primeiro)
-    messages.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+    allMessages.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
     
-    console.log(`[Chatwoot] Total de ${totalMessages} mensagens válidas encontradas em ${pagesToFetch} páginas`);
-    return messages;
+    console.log(`[Chatwoot] Total de ${allMessages.length} mensagens válidas encontradas`);
+    return allMessages;
   } catch (error) {
     console.error('Erro detalhado ao buscar mensagens do Chatwoot:', {
       message: error.message,
