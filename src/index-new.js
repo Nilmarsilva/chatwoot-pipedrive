@@ -38,105 +38,91 @@ async function getChatwootMessages(conversationId, accountId) {
   let page = 1;
   const perPage = 100; // Número de itens por página
   let totalMessages = 0;
+  let totalPages = 1;
   let hasMorePages = true;
 
   try {
-    console.log(`[Chatwoot] Buscando mensagens da conversa ${conversationId}...`);
+    console.log(`[Chatwoot] Iniciando busca de mensagens da conversa ${conversationId}...`);
     
-    while (hasMorePages) {
-      console.log(`[Chatwoot] Buscando página ${page}...`);
-      
-      if (!accountId) {
-        throw new Error('ID da conta não fornecido');
-      }
-      
-      const url = `${process.env.CHATWOOT_BASE_URL}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`;
-      const params = {
-        page: page,
-        per_page: perPage
-      };
-      
-      console.log(`[Chatwoot] Fazendo requisição para:`, { url, params });
-      
-      const response = await axios.get(url, {
-        params: params,
+    // Primeiro, vamos verificar quantas páginas existem
+    console.log(`[Chatwoot] Verificando total de mensagens...`);
+    const initialResponse = await axios.get(
+      `${process.env.CHATWOOT_BASE_URL}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+      {
+        params: { page: 1, per_page: 1 },
         headers: {
           'api_access_token': process.env.CHATWOOT_API_TOKEN,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'User-Agent': 'chatwoot-pipedrive/1.0'
-        },
-        validateStatus: function (status) {
-          return status < 500; // Aceita códigos de status menores que 500
         }
-      });
-
-      console.log(`[Chatwoot] Resposta recebida - Status: ${response.status}`);
-      
-      if (response.status === 404) {
-        console.error('[Chatwoot] Conversa não encontrada');
-        throw new Error('Conversa não encontrada no Chatwoot');
       }
+    );
 
-      if (response.status !== 200) {
-        console.error('[Chatwoot] Erro na API:', {
-          status: response.status,
-          statusText: response.statusText,
+    // Extrair informações de paginação do cabeçalho
+    const totalCount = parseInt(initialResponse.headers['total-count'] || '0', 10);
+    totalPages = Math.ceil(totalCount / perPage);
+    
+    console.log(`[Chatwoot] Total de mensagens: ${totalCount} (${totalPages} páginas)`);
+    
+    // Se não houver mensagens, retorna array vazio
+    if (totalCount === 0) {
+      console.log('[Chatwoot] Nenhuma mensagem encontrada na conversa');
+      return [];
+    }
+    
+    // Buscar todas as páginas em paralelo para melhor performance
+    const fetchPromises = [];
+    const pagesToFetch = Math.min(totalPages, 10); // Limita a 10 páginas para evitar sobrecarga
+    
+    console.log(`[Chatwoot] Buscando ${pagesToFetch} páginas de mensagens...`);
+    
+    for (let i = 1; i <= pagesToFetch; i++) {
+      fetchPromises.push(
+        axios.get(
+          `${process.env.CHATWOOT_BASE_URL}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+          {
+            params: { page: i, per_page: perPage },
+            headers: {
+              'api_access_token': process.env.CHATWOOT_API_TOKEN,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'User-Agent': 'chatwoot-pipedrive/1.0'
+            }
+          }
+        ).then(response => ({
+          page: i,
           data: response.data,
+          status: response.status,
           headers: response.headers
-        });
-        throw new Error(`Erro na API do Chatwoot: ${response.status} - ${JSON.stringify(response.data)}`);
-      }
-
-      const data = response.data;
-      const currentMessages = data.payload || data.data || [];
-      
-      if (!Array.isArray(currentMessages)) {
-        console.error('[Chatwoot] Formato de resposta inesperado:', {
-          data: data,
-          headers: response.headers
-        });
-        throw new Error('Formato de resposta inesperado da API do Chatwoot');
-      }
-      
-      console.log(`[Chatwoot] ${currentMessages.length} mensagens recebidas na página ${page}`);
-      
-      if (currentMessages.length === 0) {
-        console.log('[Chatwoot] Nenhuma mensagem encontrada na página, encerrando paginação');
-        hasMorePages = false;
-        break;
+        })).catch(error => ({
+          page: i,
+          error: error.message,
+          status: error.response?.status
+        }))
+      );
+    }
+    
+    // Aguardar todas as requisições
+    const results = await Promise.all(fetchPromises);
+    
+    // Processar resultados
+    for (const result of results) {
+      if (result.error) {
+        console.error(`[Chatwoot] Erro ao buscar página ${result.page}:`, result.error);
+        continue;
       }
       
-      // Filtra mensagens do sistema e adiciona as demais
-      const validMessages = currentMessages.filter(msg => {
-        console.log(`[Chatwoot] Processando mensagem:`, {
-          id: msg.id,
-          content_type: msg.content_type,
-          message_type: msg.message_type,
-          private: msg.private,
-          has_attachments: !!msg.attachments && msg.attachments.length > 0,
-          attachments_count: msg.attachments ? msg.attachments.length : 0,
-          created_at: msg.created_at
-        });
-
-        // Log detalhado de anexos se existirem
-        if (msg.attachments && msg.attachments.length > 0) {
-          console.log(`[Chatwoot] Anexos da mensagem ${msg.id}:`, 
-            msg.attachments.map(a => ({
-              id: a.id,
-              file_type: a.file_type,
-              file_size: a.file_size,
-              data_url: a.data_url || null,
-              thumb_url: a.thumb_url || null
-            }))
-          );
-        }
-
+      const pageMessages = result.data.payload || result.data.data || [];
+      console.log(`[Chatwoot] Página ${result.page}: ${pageMessages.length} mensagens recebidas`);
+      
+      // Filtrar apenas mensagens de usuário (não-sistema)
+      const validMessages = pageMessages.filter(msg => {
         const isSystemMessage = msg.message_type === 2 || msg.private === true;
         if (isSystemMessage) {
-          console.log(`[Chatwoot] Mensagem do sistema ignorada:`, {
+          console.log(`[Chatwoot] Mensagem do sistema ignorada (página ${result.page}):`, {
             id: msg.id,
-            content: msg.content,
+            content: msg.content?.substring(0, 100) + (msg.content?.length > 100 ? '...' : ''),
             message_type: msg.message_type,
             private: msg.private
           });
@@ -145,21 +131,14 @@ async function getChatwootMessages(conversationId, accountId) {
         return true;
       });
       
-      console.log(`[Chatwoot] ${validMessages.length} mensagens válidas após filtro`);
-      
       messages.push(...validMessages);
       totalMessages += validMessages.length;
-      
-      // Se recebemos menos itens que o solicitado, é a última página
-      if (currentMessages.length < perPage) {
-        console.log(`[Chatwoot] Última página encontrada com ${currentMessages.length} itens`);
-        hasMorePages = false;
-      } else {
-        page++;
-      }
     }
     
-    console.log(`[Chatwoot] Total de ${totalMessages} mensagens encontradas em ${page} páginas`);
+    // Ordenar mensagens por data de criação (mais antigas primeiro)
+    messages.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+    
+    console.log(`[Chatwoot] Total de ${totalMessages} mensagens válidas encontradas em ${pagesToFetch} páginas`);
     return messages;
   } catch (error) {
     console.error('Erro detalhado ao buscar mensagens do Chatwoot:', {
