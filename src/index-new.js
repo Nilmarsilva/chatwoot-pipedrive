@@ -33,30 +33,100 @@ const logRequest = (req, message) => {
 };
 
 // Função para buscar todo o histórico do Chatwoot com paginação
-async function getChatwootMessages(conversationId) {
+async function getChatwootMessages(conversationId, accountId) {
   const messages = [];
   let page = 1;
+  const perPage = 100; // Número de itens por página
+  let totalMessages = 0;
 
   try {
+    console.log(`[Chatwoot] Buscando mensagens da conversa ${conversationId}...`);
+    
     while (true) {
-      const res = await axios.get(
-        `${process.env.CHATWOOT_BASE_URL}/api/v1/conversations/${conversationId}/messages?page=${page}`,
-        {
-          headers: {
-            api_access_token: process.env.CHATWOOT_API_TOKEN
-          }
+      console.log(`[Chatwoot] Buscando página ${page}...`);
+      
+      if (!accountId) {
+        throw new Error('ID da conta não fornecido');
+      }
+      
+      const url = `${process.env.CHATWOOT_BASE_URL}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`;
+      const params = {
+        page: page,
+        per_page: perPage
+      };
+      
+      console.log(`[Chatwoot] URL: ${url}`, { params });
+      
+      const response = await axios.get(url, {
+        params: params,
+        headers: {
+          'api_access_token': process.env.CHATWOOT_API_TOKEN,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'chatwoot-pipedrive/1.0'
+        },
+        validateStatus: function (status) {
+          return status < 500; // Aceita códigos de status menores que 500
         }
-      );
+      });
+
+      console.log(`[Chatwoot] Resposta recebida - Status: ${response.status}`);
       
-      if (!res.data.payload || res.data.payload.length === 0) break;
+      if (response.status === 404) {
+        console.error('[Chatwoot] Conversa não encontrada');
+        throw new Error('Conversa não encontrada no Chatwoot');
+      }
+
+      if (response.status !== 200) {
+        console.error('[Chatwoot] Erro na API:', {
+          status: response.status,
+          statusText: response.statusText,
+          data: response.data
+        });
+        throw new Error(`Erro na API do Chatwoot: ${response.status} - ${JSON.stringify(response.data)}`);
+      }
+
+      const data = response.data;
+      const currentMessages = data.payload || data.data || [];
       
-      messages.push(...res.data.payload);
+      if (!currentMessages || !Array.isArray(currentMessages)) {
+        console.error('[Chatwoot] Formato de resposta inesperado:', data);
+        throw new Error('Formato de resposta inesperado da API do Chatwoot');
+      }
+      
+      console.log(`[Chatwoot] ${currentMessages.length} mensagens recebidas na página ${page}`);
+      
+      if (currentMessages.length === 0) {
+        console.log('[Chatwoot] Nenhuma mensagem adicional encontrada, encerrando paginação');
+        break;
+      }
+      
+      messages.push(...currentMessages);
+      totalMessages += currentMessages.length;
+      
+      // Se recebemos menos itens que o solicitado, é a última página
+      if (currentMessages.length < perPage) {
+        console.log(`[Chatwoot] Última página encontrada com ${currentMessages.length} itens`);
+        break;
+      }
+      
       page++;
     }
     
+    console.log(`[Chatwoot] Total de ${totalMessages} mensagens encontradas em ${page} páginas`);
     return messages;
   } catch (error) {
-    console.error('Erro ao buscar mensagens do Chatwoot:', error.message);
+    console.error('Erro detalhado ao buscar mensagens do Chatwoot:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      headers: error.response?.headers,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+        headers: error.config?.headers
+      }
+    });
     throw error;
   }
 }
@@ -860,8 +930,17 @@ app.post('/webhook', async (req, res) => {
     console.log('Dados do contato extraídos:', JSON.stringify(contactData, null, 2));
     
     // Busca histórico completo de mensagens
-    console.log(`Buscando histórico completo da conversa ${conversationId}...`);
-    const chatwootMessages = await getChatwootMessages(conversationId);
+    const accountId = webhookData.account_id || webhookData.account?.id;
+    if (!accountId) {
+      console.error('ID da conta não encontrado no webhook');
+      return res.status(400).json({ 
+        status: 'erro', 
+        motivo: 'ID da conta não encontrado' 
+      });
+    }
+    
+    console.log(`Buscando histórico completo da conversa ${conversationId} na conta ${accountId}...`);
+    const chatwootMessages = await getChatwootMessages(conversationId, accountId);
     console.log(`Encontradas ${chatwootMessages.length} mensagens no histórico`);
     
     // Filtra e organiza mensagens por tipo
