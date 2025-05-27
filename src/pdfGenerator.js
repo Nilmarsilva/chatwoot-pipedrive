@@ -292,19 +292,23 @@ async function generateConversationPDF(messages, contactData) {
       doc.text(`Arquivos: ${contadorTipos.arquivo}`);
       doc.text(`Data do relatório: ${new Date().toLocaleString('pt-BR')}`);
       
-      // Rodapé
+      // Rodapé - Apenas se houver páginas
       const pageCount = doc.bufferedPageRange().count;
-      for (let i = 0; i < pageCount; i++) {
-        doc.switchToPage(i);
-        
-        // Adicionar número da página no rodapé
-        doc.fontSize(8)
-           .text(
-             `Página ${i + 1} de ${pageCount}`,
-             50,
-             doc.page.height - 50,
-             { align: 'center' }
-           );
+      if (pageCount > 0) {
+        for (let i = 0; i < pageCount; i++) {
+          doc.switchToPage(i);
+          
+          // Adicionar número da página no rodapé
+          doc.fontSize(8)
+             .text(
+               `Página ${i + 1} de ${pageCount}`,
+               50,
+               doc.page.height - 50,
+               { align: 'center', width: doc.page.width - 100 }
+             );
+        }
+      } else {
+        console.log('[PDF] Nenhuma página para adicionar rodapé');
       }
       
       // Finalizar o documento

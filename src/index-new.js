@@ -38,11 +38,12 @@ async function getChatwootMessages(conversationId, accountId) {
   let page = 1;
   const perPage = 100; // Número de itens por página
   let totalMessages = 0;
+  let hasMorePages = true;
 
   try {
     console.log(`[Chatwoot] Buscando mensagens da conversa ${conversationId}...`);
     
-    while (true) {
+    while (hasMorePages) {
       console.log(`[Chatwoot] Buscando página ${page}...`);
       
       if (!accountId) {
@@ -55,7 +56,7 @@ async function getChatwootMessages(conversationId, accountId) {
         per_page: perPage
       };
       
-      console.log(`[Chatwoot] URL: ${url}`, { params });
+      console.log(`[Chatwoot] Fazendo requisição para:`, { url, params });
       
       const response = await axios.get(url, {
         params: params,
@@ -81,7 +82,8 @@ async function getChatwootMessages(conversationId, accountId) {
         console.error('[Chatwoot] Erro na API:', {
           status: response.status,
           statusText: response.statusText,
-          data: response.data
+          data: response.data,
+          headers: response.headers
         });
         throw new Error(`Erro na API do Chatwoot: ${response.status} - ${JSON.stringify(response.data)}`);
       }
@@ -89,28 +91,72 @@ async function getChatwootMessages(conversationId, accountId) {
       const data = response.data;
       const currentMessages = data.payload || data.data || [];
       
-      if (!currentMessages || !Array.isArray(currentMessages)) {
-        console.error('[Chatwoot] Formato de resposta inesperado:', data);
+      if (!Array.isArray(currentMessages)) {
+        console.error('[Chatwoot] Formato de resposta inesperado:', {
+          data: data,
+          headers: response.headers
+        });
         throw new Error('Formato de resposta inesperado da API do Chatwoot');
       }
       
       console.log(`[Chatwoot] ${currentMessages.length} mensagens recebidas na página ${page}`);
       
       if (currentMessages.length === 0) {
-        console.log('[Chatwoot] Nenhuma mensagem adicional encontrada, encerrando paginação');
+        console.log('[Chatwoot] Nenhuma mensagem encontrada na página, encerrando paginação');
+        hasMorePages = false;
         break;
       }
       
-      messages.push(...currentMessages);
-      totalMessages += currentMessages.length;
+      // Filtra mensagens do sistema e adiciona as demais
+      const validMessages = currentMessages.filter(msg => {
+        console.log(`[Chatwoot] Processando mensagem:`, {
+          id: msg.id,
+          content_type: msg.content_type,
+          message_type: msg.message_type,
+          private: msg.private,
+          has_attachments: !!msg.attachments && msg.attachments.length > 0,
+          attachments_count: msg.attachments ? msg.attachments.length : 0,
+          created_at: msg.created_at
+        });
+
+        // Log detalhado de anexos se existirem
+        if (msg.attachments && msg.attachments.length > 0) {
+          console.log(`[Chatwoot] Anexos da mensagem ${msg.id}:`, 
+            msg.attachments.map(a => ({
+              id: a.id,
+              file_type: a.file_type,
+              file_size: a.file_size,
+              data_url: a.data_url || null,
+              thumb_url: a.thumb_url || null
+            }))
+          );
+        }
+
+        const isSystemMessage = msg.message_type === 2 || msg.private === true;
+        if (isSystemMessage) {
+          console.log(`[Chatwoot] Mensagem do sistema ignorada:`, {
+            id: msg.id,
+            content: msg.content,
+            message_type: msg.message_type,
+            private: msg.private
+          });
+          return false;
+        }
+        return true;
+      });
+      
+      console.log(`[Chatwoot] ${validMessages.length} mensagens válidas após filtro`);
+      
+      messages.push(...validMessages);
+      totalMessages += validMessages.length;
       
       // Se recebemos menos itens que o solicitado, é a última página
       if (currentMessages.length < perPage) {
         console.log(`[Chatwoot] Última página encontrada com ${currentMessages.length} itens`);
-        break;
+        hasMorePages = false;
+      } else {
+        page++;
       }
-      
-      page++;
     }
     
     console.log(`[Chatwoot] Total de ${totalMessages} mensagens encontradas em ${page} páginas`);
@@ -135,9 +181,16 @@ async function getChatwootMessages(conversationId, accountId) {
 function filterMessages(messages) {
   console.log(`Processando ${messages.length} mensagens do histórico`);
   
-  // Filtrar mensagens públicas (cliente e atendente)
-  const filteredMessages = messages.filter(msg => !msg.private && (msg.message_type === 0 || msg.message_type === 1));
-  console.log(`Filtradas ${filteredMessages.length} mensagens públicas`);
+  // Filtrar mensagens públicas (cliente e atendente) e que tenham conteúdo ou anexos
+  const filteredMessages = messages.filter(msg => {
+    const hasContent = msg.content && msg.content.trim() !== '';
+    const hasAttachments = msg.attachments && msg.attachments.length > 0;
+    const isValidType = msg.message_type === 0 || msg.message_type === 1; // 0 = incoming, 1 = outgoing
+    
+    return !msg.private && isValidType && (hasContent || hasAttachments);
+  });
+  
+  console.log(`Filtradas ${filteredMessages.length} mensagens públicas com conteúdo`);
   
   // Organizar mensagens por tipo
   const messagesByType = {
@@ -148,60 +201,90 @@ function filterMessages(messages) {
   };
 
   filteredMessages.forEach(msg => {
-    // Determinar o tipo de remetente
-    let senderType = 'Cliente';
-    let senderName = '';
-    
-    if (msg.sender) {
-      if (msg.sender.type === 'user') {
-        senderType = 'Atendente';
-        senderName = msg.sender.name || 'Atendente';
-      } else {
-        senderName = msg.sender.name || 'Cliente';
-      }
-    }
-
-    // Processar anexos se existirem
-    if (msg.attachments && msg.attachments.length > 0) {
-      console.log(`Mensagem ${msg.id} contém ${msg.attachments.length} anexos`);
+    try {
+      // Determinar o tipo de remetente
+      let senderType = 'Cliente';
+      let senderName = 'Cliente';
       
-      msg.attachments.forEach(attachment => {
-        const commonData = {
+      if (msg.sender) {
+        if (msg.sender.type === 'user' || msg.sender.type === 'agent') {
+          senderType = 'Atendente';
+          senderName = msg.sender.name || 'Atendente';
+        } else if (msg.sender.type === 'contact') {
+          senderName = msg.sender.name || 'Cliente';
+        }
+      }
+
+      // Log detalhado da mensagem para debug
+      console.log(`Processando mensagem ${msg.id}:`, {
+        content: msg.content,
+        message_type: msg.message_type,
+        sender_type: msg.sender?.type,
+        sender_name: senderName,
+        attachments: msg.attachments?.length || 0,
+        created_at: msg.created_at
+      });
+
+      // Processar anexos se existirem
+      if (msg.attachments && msg.attachments.length > 0) {
+        console.log(`Mensagem ${msg.id} contém ${msg.attachments.length} anexos`);
+        
+        msg.attachments.forEach(attachment => {
+          try {
+            const commonData = {
+              id: `${msg.id}_${attachment.id || Date.now()}`,
+              original_id: msg.id,
+              sender: senderName,
+              sender_type: senderType,
+              content: msg.content || '',
+              url: attachment.data_url || attachment.url,
+              file_type: attachment.file_type || path.extname(attachment.file_name || '').substring(1),
+              file_name: attachment.file_name || `arquivo_${Date.now()}`,
+              created_at: msg.created_at || Math.floor(Date.now() / 1000)
+            };
+
+            console.log(`Processando anexo:`, commonData);
+
+            const fileType = (attachment.file_type || '').toLowerCase();
+            
+            if (fileType.includes('image')) {
+              messagesByType.image.push(commonData);
+            } else if (fileType.includes('audio')) {
+              messagesByType.audio.push(commonData);
+            } else {
+              messagesByType.file.push({
+                ...commonData,
+                extension: attachment.extension || path.extname(attachment.file_name || '').substring(1)
+              });
+            }
+          } catch (attachmentError) {
+            console.error(`Erro ao processar anexo da mensagem ${msg.id}:`, attachmentError);
+          }
+        });
+      } 
+      
+      // Processar mensagem de texto (mesmo se tiver anexos, pois pode ter texto junto)
+      if (msg.content && msg.content.trim() !== '') {
+        messagesByType.text.push({
           id: msg.id,
           sender: senderName,
           sender_type: senderType,
           content: msg.content,
-          url: attachment.data_url,
-          file_type: attachment.file_type,
-          file_name: attachment.file_name || 'arquivo',
-          created_at: msg.created_at
-        };
-
-        if (attachment.file_type === 'image') {
-          messagesByType.image.push(commonData);
-        } else if (attachment.file_type === 'audio') {
-          messagesByType.audio.push(commonData);
-        } else {
-          messagesByType.file.push({
-            ...commonData,
-            extension: attachment.extension
-          });
-        }
-      });
-    } 
-    // Processar mensagem de texto
-    else if (msg.content) {
-      messagesByType.text.push({
-        id: msg.id,
-        sender: senderName,
-        sender_type: senderType,
-        content: msg.content,
-        created_at: msg.created_at
-      });
+          created_at: msg.created_at || Math.floor(Date.now() / 1000)
+        });
+      }
+    } catch (error) {
+      console.error(`Erro ao processar mensagem ${msg.id}:`, error);
     }
   });
 
-  console.log(`Mensagens separadas por tipo: ${messagesByType.text.length} textos, ${messagesByType.image.length} imagens, ${messagesByType.audio.length} áudios, ${messagesByType.file.length} arquivos`);
+  console.log(`Mensagens separadas por tipo:`, {
+    textos: messagesByType.text.length,
+    imagens: messagesByType.image.length,
+    audios: messagesByType.audio.length,
+    arquivos: messagesByType.file.length,
+    total: messagesByType.text.length + messagesByType.image.length + messagesByType.audio.length + messagesByType.file.length
+  });
   
   return {
     messagesByType,
