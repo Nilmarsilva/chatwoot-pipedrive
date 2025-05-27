@@ -46,8 +46,8 @@ async function getChatwootMessages(conversationId, accountId) {
     while (hasMoreMessages && requestCount < maxRequests) {
       requestCount++;
       
-      // Parâmetros da requisição
-      const params = { per_page: 100 }; // Máximo de itens por página
+      // Parâmetros da requisição - Chatwoot Community Edition tem limite de 20 mensagens por requisição
+      const params = { per_page: 20 }; // Limite máximo na versão Community
       if (beforeId) {
         params.before = beforeId;
       }
@@ -119,11 +119,9 @@ async function getChatwootMessages(conversationId, accountId) {
         hasMoreMessages = false;
       }
       
-      // Se recebemos menos mensagens que o máximo, não há mais páginas
-      if (pageMessages.length < 100) {
-        console.log('[Chatwoot] Todas as mensagens foram buscadas');
-        hasMoreMessages = false;
-      }
+      // Na versão Community, sempre recebemos no máximo 20 mensagens
+      // A única forma de saber se terminou é quando não recebermos mais mensagens
+      // (já tratado no bloco pageMessages.length === 0)
       
       // Pequena pausa entre as requisições para evitar sobrecarga
       await new Promise(resolve => setTimeout(resolve, 200));
