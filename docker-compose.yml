@@ -17,11 +17,11 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - CHATWOOT_API_TOKEN=${CHATWOOT_API_TOKEN}
-      - CHATWOOT_BASE_URL=${CHATWOOT_BASE_URL}
-      - PIPEDRIVE_API_TOKEN=${PIPEDRIVE_API_TOKEN}
-      - PIPEDRIVE_BASE_URL=${PIPEDRIVE_BASE_URL}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CHATWOOT_API_TOKEN=${iDvvw5qSeJUGK4xCEMc8xDB6}
+      - CHATWOOT_BASE_URL=${https://app.authbrasil.app.br}
+      - PIPEDRIVE_API_TOKEN=${f2f7cc513630469a4fa97a32b14a01575d532662}
+      - PIPEDRIVE_BASE_URL=${https://captacao.pipedrive.com/api/v1}
+      - OPENAI_API_KEY=${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}
     volumes:
       - ./logs:/app/logs
       - ./temp:/app/temp
