@@ -37,11 +37,11 @@ services:
       - PIPEDRIVE_API_TOKEN=${PIPEDRIVE_API_TOKEN}
       - PIPEDRIVE_BASE_URL=${PIPEDRIVE_BASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-    # Usando apenas volumes nomeados para compatibilidade com Swarm
+    # Usando volumes com nomes específicos para evitar duplicação
     volumes:
-      - chatwoot_pipedrive_logs:/app/logs
-      - chatwoot_pipedrive_temp:/app/temp
-      - chatwoot_pipedrive_app:/app
+      - chatwoot_pipedrive_logs_data:/app/logs
+      - chatwoot_pipedrive_temp_data:/app/temp
+      - chatwoot_pipedrive_app_data:/app
     networks:
       - network_public
     # Mover labels para dentro da seção deploy para compatibilidade com Swarm
@@ -70,9 +70,15 @@ networks:
 
 # Volumes nomeados para persistência de dados
 volumes:
-  chatwoot_pipedrive_logs:
+  chatwoot_pipedrive_logs_data:
+    name: chatwoot_pipedrive_logs_data
     driver: local
-  chatwoot_pipedrive_temp:
+    external: false
+  chatwoot_pipedrive_temp_data:
+    name: chatwoot_pipedrive_temp_data
     driver: local
-  chatwoot_pipedrive_app:
+    external: false
+  chatwoot_pipedrive_app_data:
+    name: chatwoot_pipedrive_app_data
     driver: local
+    external: false
