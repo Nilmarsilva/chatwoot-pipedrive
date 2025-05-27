@@ -800,24 +800,37 @@ app.post('/webhook', async (req, res) => {
     console.log('Body:', JSON.stringify(req.body, null, 2));
     console.log('===========================================================');
     
-    logRequest(req, 'Webhook recebido do Chatwoot');
+    // Processa o corpo da requisição
+    let webhookData;
     
-    // Verifica se o corpo da requisição é um array e pega o primeiro item
-    const webhookData = Array.isArray(req.body) ? req.body[0].body : req.body;
-    console.log('Dados do webhook processados:', JSON.stringify(webhookData, null, 2));
-    
-    // Validação básica dos dados recebidos
-    if (!webhookData || typeof webhookData !== 'object') {
-      console.error('Webhook inválido: dados ausentes ou em formato incorreto');
-      return res.status(400).json({ 
-        status: 'erro', 
-        motivo: 'Dados do webhook inválidos ou ausentes' 
-      });
+    // Se o corpo for uma string JSON, tenta fazer o parse
+    if (typeof req.body === 'string') {
+      try {
+        webhookData = JSON.parse(req.body);
+      } catch (e) {
+        console.error('Erro ao fazer parse do JSON:', e);
+        return res.status(400).json({ status: 'erro', motivo: 'Formato JSON inválido' });
+      }
+    } 
+    // Se vier no formato { query: "{...}" }
+    else if (req.body && typeof req.body.query === 'string') {
+      try {
+        webhookData = JSON.parse(req.body.query);
+      } catch (e) {
+        console.error('Erro ao fazer parse do JSON da query:', e);
+        return res.status(400).json({ status: 'erro', motivo: 'Formato JSON inválido no campo query' });
+      }
+    } 
+    // Se já for um objeto, usa diretamente
+    else {
+      webhookData = req.body;
     }
+    
+    console.log('Dados do webhook processados:', JSON.stringify(webhookData, null, 2));
     
     // Verifica se o status é "resolved"
     if (webhookData.status !== 'resolved') {
-      console.log(`Status da conversa é ${webhookData.status}, não "resolved". Ignorando.`);
+      console.log(`Status da conversa é ${webhookData.status || 'undefined'}, não "resolved". Ignorando.`);
       return res.json({ 
         status: 'ignorado', 
         motivo: 'Status não é resolved',
