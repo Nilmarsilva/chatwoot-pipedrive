@@ -1,18 +1,20 @@
-version: '3'
+version: '3.8'
 
 services:
   chatwoot-pipedrive:
-    # Duas opções: usar build local OU imagem pré-construída
+    # No modo Swarm, precisamos usar uma imagem pré-construída
+    image: node:16-alpine
     
-    # Opção 1: Build local (comente esta seção se usar a Opção 2)
-    build:
-      context: .
-      dockerfile: Dockerfile
-      
-    # Opção 2: Imagem pré-construída (descomente e ajuste se preferir esta opção)
-    # image: authbrasil/chatwoot-pipedrive:latest
-    container_name: chatwoot-pipedrive
-    restart: always
+    # Substituição para o build local usando comando personalizado
+    # Isso instala as dependências e inicia a aplicação
+    command: >
+      sh -c "apk add --no-cache ffmpeg &&
+             mkdir -p /app/logs /app/temp &&
+             cd /app &&
+             npm install &&
+             npm run start:new"
+    
+    # Configurações de deploy para o modo Swarm
     # Removido o mapeamento de porta direto, pois o Traefik gerenciará isso
     environment:
       - NODE_ENV=production
@@ -22,18 +24,28 @@ services:
       - PIPEDRIVE_API_TOKEN=${PIPEDRIVE_API_TOKEN}
       - PIPEDRIVE_BASE_URL=${PIPEDRIVE_BASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+    # Monta o código fonte no container
     volumes:
-      - ./logs:/app/logs
-      - ./temp:/app/temp
+      - type: bind
+        source: ./
+        target: /app
+      - chatwoot_pipedrive_logs:/app/logs
+      - chatwoot_pipedrive_temp:/app/temp
     networks:
       - network_public
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.chatwoot-pipedrive.rule=Host(`webhookdata.authbrasil.app.br`)"
-      - "traefik.http.services.chatwoot-pipedrive.loadbalancer.server.port=3000"
-      - "traefik.http.routers.chatwoot-pipedrive.entrypoints=websecure"
-      - "traefik.http.routers.chatwoot-pipedrive.tls=true"
-      - "traefik.http.routers.chatwoot-pipedrive.tls.certresolver=myresolver"
+    # Mover labels para dentro da seção deploy para compatibilidade com Swarm
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.chatwoot-pipedrive.rule=Host(`webhookdata.authbrasil.app.br`)"
+        - "traefik.http.services.chatwoot-pipedrive.loadbalancer.server.port=3000"
+        - "traefik.http.routers.chatwoot-pipedrive.entrypoints=websecure"
+        - "traefik.http.routers.chatwoot-pipedrive.tls=true"
+        - "traefik.http.routers.chatwoot-pipedrive.tls.certresolver=myresolver"
+    # Healthcheck é suportado no Swarm
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:3000/health"]
       interval: 30s
@@ -44,3 +56,10 @@ services:
 networks:
   network_public:
     external: true
+
+# Volumes nomeados para persistência de dados
+volumes:
+  chatwoot_pipedrive_logs:
+    driver: local
+  chatwoot_pipedrive_temp:
+    driver: local
