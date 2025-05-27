@@ -794,11 +794,17 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
 // Endpoint que recebe o webhook do Chatwoot
 app.post('/webhook', async (req, res) => {
   try {
-    // Log da requisição recebida
+    // Log detalhado da requisição recebida
+    console.log('==================== WEBHOOK RECEBIDO ====================');
+    console.log('Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+    console.log('===========================================================');
+    
     logRequest(req, 'Webhook recebido do Chatwoot');
     
     // Verifica se o corpo da requisição é um array e pega o primeiro item
     const webhookData = Array.isArray(req.body) ? req.body[0].body : req.body;
+    console.log('Dados do webhook processados:', JSON.stringify(webhookData, null, 2));
     
     // Validação básica dos dados recebidos
     if (!webhookData || typeof webhookData !== 'object') {
@@ -1068,7 +1074,17 @@ app.post('/webhook', async (req, res) => {
 
 // Rota de verificação de saúde
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  console.log('Health check solicitado:', new Date().toISOString());
+  res.json({ status: 'ok' });
+});
+
+// Rota de teste para webhook
+app.get('/test-webhook', (req, res) => {
+  console.log('Teste de webhook solicitado:', new Date().toISOString());
+  res.json({ 
+    status: 'ok', 
+    message: 'Endpoint de teste do webhook está funcionando. Use POST /webhook para enviar dados reais.'
+  });
 });
 
 // Inicia servidor
