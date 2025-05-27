@@ -54,8 +54,19 @@ async function getChatwootMessages(conversationId, accountId) {
       
       console.log(`[Chatwoot] Buscando mensagens ${beforeId ? `anteriores a ${beforeId}` : 'mais recentes'}...`);
       
+      // Garantir que a URL base termine com uma barra
+      const baseUrl = process.env.CHATWOOT_BASE_URL.endsWith('/') 
+        ? process.env.CHATWOOT_BASE_URL 
+        : `${process.env.CHATWOOT_BASE_URL}/`;
+      
+      // Remover barras extras para evitar duplicação
+      const apiPath = `api/v1/accounts/${accountId}/conversations/${conversationId}/messages`.replace(/^\/+|\/+$/g, '');
+      const fullUrl = `${baseUrl}${apiPath}`;
+      
+      console.log(`[Chatwoot] URL da requisição: ${fullUrl}`);
+      
       const response = await axios.get(
-        `${process.env.CHATWOOT_BASE_URL}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+        fullUrl,
         {
           params,
           headers: {
