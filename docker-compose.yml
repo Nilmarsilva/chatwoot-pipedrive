@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   chatwoot-pipedrive:
-    # Atualizando para Node.js 18
+    # Usando Node.js 18 com Alpine
     image: node:18-alpine
     
     command: |
@@ -40,7 +40,7 @@ services:
         rm -rf /tmp/repo; \
       fi && \
       echo "Instalando dependências do Node.js..." && \
-      npm install --omit=optional && \
+      npm install --omit=optional --no-audit --no-fund && \
       echo "Iniciando aplicação..." && \
       npm run start:new'
     
@@ -57,6 +57,7 @@ services:
     # Configurações de ambiente
     environment:
       - NODE_ENV=production
+      - NODE_OPTIONS=--max-old-space-size=1024
       - PORT=3000
       - CHATWOOT_API_TOKEN=${CHATWOOT_API_TOKEN}
       - CHATWOOT_BASE_URL=${CHATWOOT_BASE_URL}
@@ -70,7 +71,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
     
     # Configurações de deploy para o Docker Swarm
     deploy:
@@ -80,9 +81,15 @@ services:
         delay: 10s
       restart_policy:
         condition: on-failure
-        delay: 5s
+        delay: 10s
         max_attempts: 3
         window: 120s
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1.5G
+        reservations:
+          memory: 512M
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.chatwoot-pipedrive.rule=Host(`webhookdata.authbrasil.app.br`)"
