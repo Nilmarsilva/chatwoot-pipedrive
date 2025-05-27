@@ -6,6 +6,7 @@ const path = require('path');
 const FormData = require('form-data');
 const { OpenAI } = require('openai');
 const ffmpeg = require('fluent-ffmpeg');
+const sharp = require('sharp');
 const { generateConversationPDF } = require('./pdfGenerator');
 require('dotenv').config();
 
@@ -347,23 +348,93 @@ function extractContactData(webhookData) {
 }
 
 // Função para baixar arquivo de URL
-async function downloadFile(url) {
-  try {
-    console.log(`Baixando arquivo de: ${url}`);
-    const response = await axios({
-      url,
-      method: 'GET',
-      responseType: 'arraybuffer'
-    });
-    
-    return {
-      data: response.data,
-      contentType: response.headers['content-type']
-    };
-  } catch (error) {
-    console.error(`Erro ao baixar arquivo de ${url}:`, error.message);
-    return null; // Retorna null em vez de lançar erro para não interromper o fluxo
+async function downloadFile(url, maxRetries = 2, timeout = 30000) {
+  let lastError;
+  
+  // Configuração de cabeçalhos para autenticação no Chatwoot, se necessário
+  const headers = {};
+  if (process.env.CHATWOOT_API_TOKEN) {
+    headers['api_access_token'] = process.env.CHATWOOT_API_TOKEN;
   }
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[Tentativa ${attempt}/${maxRetries}] Baixando arquivo de: ${url}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      const response = await axios({
+        url,
+        method: 'GET',
+        responseType: 'arraybuffer',
+        headers,
+        signal: controller.signal,
+        maxContentLength: 50 * 1024 * 1024, // 50MB
+        maxBodyLength: 50 * 1024 * 1024,    // 50MB
+        timeout: timeout,
+        validateStatus: (status) => status >= 200 && status < 400
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.data || response.data.length === 0) {
+        throw new Error('O arquivo baixado está vazio');
+      }
+      
+      const contentType = response.headers['content-type'] || 'application/octet-stream';
+      const contentLength = parseInt(response.headers['content-length']) || response.data.length;
+      
+      console.log(`Download concluído: ${(contentLength / 1024).toFixed(2)} KB, tipo: ${contentType}`);
+      
+      return {
+        data: response.data,
+        contentType,
+        headers: response.headers,
+        status: response.status,
+        size: contentLength
+      };
+      
+    } catch (error) {
+      lastError = error;
+      
+      if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+        console.warn(`[Tentativa ${attempt}/${maxRetries}] Timeout ao baixar arquivo: ${url}`);
+      } else if (error.response) {
+        // Erro de resposta HTTP (4xx, 5xx)
+        console.error(`[Tentativa ${attempt}/${maxRetries}] Erro HTTP ${error.response.status}: ${error.response.statusText}`, {
+          url,
+          headers: error.config?.headers,
+          responseHeaders: error.response.headers
+        });
+      } else if (error.request) {
+        // Erro de requisição (sem resposta)
+        console.error(`[Tentativa ${attempt}/${maxRetries}] Sem resposta do servidor:`, {
+          url,
+          code: error.code,
+          message: error.message
+        });
+      } else {
+        // Outros erros
+        console.error(`[Tentativa ${attempt}/${maxRetries}] Erro ao baixar arquivo:`, {
+          url,
+          message: error.message,
+          stack: error.stack
+        });
+      }
+      
+      // Se não for a última tentativa, aguarda um tempo antes de tentar novamente
+      if (attempt < maxRetries) {
+        const backoffTime = Math.min(1000 * Math.pow(2, attempt), 10000); // Backoff exponencial, máximo 10s
+        console.log(`Aguardando ${backoffTime}ms antes da próxima tentativa...`);
+        await new Promise(resolve => setTimeout(resolve, backoffTime));
+      }
+    }
+  }
+  
+  // Se chegou aqui, todas as tentativas falharam
+  console.error(`Falha ao baixar o arquivo após ${maxRetries} tentativas: ${url}`);
+  return null;
 }
 
 // Função para converter arquivo para base64
@@ -373,29 +444,92 @@ function convertToBase64(buffer, contentType) {
 
 // Função para processar imagens
 async function processImages(images) {
+  console.log(`Iniciando processamento de ${images.length} imagens...`);
   const processedImages = [];
+  const startTime = Date.now();
   
-  for (const image of images) {
-    console.log(`Processando imagem: ${image.id}`);
+  for (const [index, image] of images.entries()) {
+    const imageStartTime = Date.now();
+    const imageId = image.id || `img_${index}`;
+    
+    console.log(`[${index + 1}/${images.length}] Processando imagem: ${imageId}`);
+    
     try {
+      // Validação básica
       if (!image.url) {
-        console.warn(`Imagem ${image.id} não tem URL, pulando...`);
-        continue;
+        throw new Error('URL da imagem não fornecida');
       }
       
+      // Baixar a imagem com tratamento de erros
+      console.log(`Baixando imagem ${imageId} de: ${image.url}`);
       const fileData = await downloadFile(image.url);
-      if (!fileData) {
-        console.warn(`Não foi possível baixar a imagem ${image.id}, pulando...`);
-        continue;
+      
+      if (!fileData || !fileData.data) {
+        throw new Error('Falha ao baixar a imagem: dados inválidos');
       }
       
-      const base64Data = convertToBase64(fileData.data, fileData.contentType);
+      const contentType = fileData.contentType || 'image/jpeg'; // Default para JPEG se não especificado
+      const fileSize = fileData.size || fileData.data.length;
       
-      processedImages.push({
+      console.log(`Imagem ${imageId} baixada: ${(fileSize / 1024).toFixed(2)} KB, tipo: ${contentType}`);
+      
+      // Verificar se é realmente uma imagem
+      if (!contentType.startsWith('image/')) {
+        throw new Error(`Tipo de arquivo não suportado: ${contentType}. Esperado um tipo de imagem.`);
+      }
+      
+      // Extrair metadados da imagem (se disponível)
+      let metadata = {};
+      try {
+        const tempFile = await saveBufferToTempFile(fileData.data, 'img');
+        const result = await sharp(tempFile).metadata();
+        metadata = {
+          width: result.width,
+          height: result.height,
+          format: result.format,
+          hasAlpha: result.hasAlpha,
+          hasProfile: result.hasProfile,
+          isProgressive: result.isProgressive,
+          size: fileSize,
+          space: result.space,
+          channels: result.channels
+        };
+        
+        // Remover o arquivo temporário
+        try {
+          await fs.promises.unlink(tempFile);
+        } catch (e) {
+          console.warn(`Não foi possível remover arquivo temporário ${tempFile}:`, e.message);
+        }
+      } catch (metadataError) {
+        console.warn(`Não foi possível extrair metadados da imagem ${imageId}:`, metadataError.message);
+        metadata = { error: metadataError.message };
+      }
+      
+      // Converter para base64
+      const base64Data = convertToBase64(fileData.data, contentType);
+      
+      // Criar objeto com informações da imagem processada
+      const processedImage = {
         ...image,
+        id: imageId,
         base64: base64Data,
-        processado: true
-      });
+        content_type: contentType,
+        size: fileSize,
+        extension: image.extension || contentType.split('/').pop() || 'jpg',
+        file_type: 'imagem',
+        file_name: image.file_name || `imagem_${Date.now()}.${contentType.split('/').pop() || 'jpg'}`,
+        metadata,
+        processado: true,
+        processado_em: new Date().toISOString()
+      };
+      
+      processedImages.push(processedImage);
+      
+      const processingTime = (Date.now() - imageStartTime) / 1000;
+      console.log(`Imagem ${imageId} processada com sucesso em ${processingTime.toFixed(2)}s ` +
+                 `(${metadata.width}x${metadata.height}px, ${(fileSize / 1024).toFixed(2)}KB)`);
+      
     } catch (error) {
       console.error(`Erro ao processar imagem ${image.id}:`, error.message);
     }
@@ -406,10 +540,21 @@ async function processImages(images) {
 
 // Função para processar arquivos
 async function processFiles(files) {
+  console.log(`Iniciando processamento de ${files.length} arquivos...`);
   const processedFiles = [];
-  for (const file of files) {
-    console.log(`Processando arquivo: ${file.id}`);
+  const startTime = Date.now();
+  
+  for (const [index, file] of files.entries()) {
+    const fileStartTime = Date.now();
+    const fileId = file.id || `file_${index}`;
+    
+    console.log(`[${index + 1}/${files.length}] Processando arquivo: ${fileId}`);
+    
     try {
+      if (!file.url) {
+        throw new Error('URL do arquivo não fornecida');
+      }
+      
       // Extrair extensão do nome do arquivo ou da URL
       let extension = '';
       if (file.file_name) {
@@ -424,46 +569,121 @@ async function processFiles(files) {
         }
       }
       
-      // Baixar o arquivo
+      // Baixar o arquivo com tratamento de erros
+      console.log(`Baixando arquivo ${fileId} de: ${file.url}`);
       const fileData = await downloadFile(file.url);
-      const contentType = fileData.headers['content-type'] || 'application/octet-stream';
-      const base64 = convertToBase64(fileData.data, contentType);
       
-      // Determinar o tipo de arquivo baseado no content-type ou extensão
-      let fileType = 'unknown';
-      if (contentType.includes('pdf')) {
-        fileType = 'pdf';
-      } else if (contentType.includes('image')) {
-        fileType = 'image';
-      } else if (contentType.includes('word') || extension === 'doc' || extension === 'docx') {
-        fileType = 'document';
-      } else if (contentType.includes('excel') || extension === 'xls' || extension === 'xlsx') {
-        fileType = 'spreadsheet';
-      } else if (contentType.includes('text') || extension === 'txt') {
-        fileType = 'text';
+      if (!fileData || !fileData.data) {
+        throw new Error('Falha ao baixar o arquivo: dados inválidos');
       }
       
-      // Adiciona informações do arquivo processado
-      processedFiles.push({
+      const contentType = fileData.contentType || 'application/octet-stream';
+      const fileSize = fileData.size || fileData.data.length;
+      
+      console.log(`Arquivo ${fileId} baixado: ${(fileSize / 1024).toFixed(2)} KB, tipo: ${contentType}`);
+      
+      // Determinar o tipo de arquivo baseado no content-type ou extensão
+      let fileType = 'outro';
+      const typeMap = {
+        'pdf': ['application/pdf'],
+        'imagem': ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
+        'documento': [
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/vnd.oasis.opendocument.text',
+          'application/rtf',
+          'text/plain'
+        ],
+        'planilha': [
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.oasis.opendocument.spreadsheet',
+          'text/csv'
+        ],
+        'apresentacao': [
+          'application/vnd.ms-powerpoint',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          'application/vnd.oasis.opendocument.presentation'
+        ],
+        'arquivo_compactado': [
+          'application/zip',
+          'application/x-rar-compressed',
+          'application/x-7z-compressed',
+          'application/x-tar',
+          'application/x-gzip'
+        ]
+      };
+      
+      // Verifica o tipo pelo content-type
+      for (const [type, mimeTypes] of Object.entries(typeMap)) {
+        if (mimeTypes.some(mime => contentType.includes(mime.split('/')[1] || ''))) {
+          fileType = type;
+          break;
+        }
+      }
+      
+      // Se não encontrou pelo content-type, tenta pela extensão
+      if (fileType === 'outro' && extension) {
+        const extensionMap = {
+          // Imagens
+          'jpg': 'imagem', 'jpeg': 'imagem', 'png': 'imagem', 'gif': 'imagem', 'webp': 'imagem', 'svg': 'imagem',
+          // Documentos
+          'doc': 'documento', 'docx': 'documento', 'odt': 'documento', 'rtf': 'documento', 'txt': 'documento',
+          // Planilhas
+          'xls': 'planilha', 'xlsx': 'planilha', 'ods': 'planilha', 'csv': 'planilha',
+          // Apresentações
+          'ppt': 'apresentacao', 'pptx': 'apresentacao', 'odp': 'apresentacao',
+          // Compactados
+          'zip': 'arquivo_compactado', 'rar': 'arquivo_compactado', '7z': 'arquivo_compactado', 'tar': 'arquivo_compactado', 'gz': 'arquivo_compactado'
+        };
+        
+        fileType = extensionMap[extension.toLowerCase()] || 'outro';
+      }
+      
+      // Converter para base64
+      const base64 = convertToBase64(fileData.data, contentType);
+      
+      // Criar objeto com informações do arquivo processado
+      const processedFile = {
         ...file,
+        id: fileId,
         base64,
         content_type: contentType,
-        size: fileData.headers['content-length'] || 0,
-        extension: extension || file.extension,
-        file_type: fileType
-      });
+        size: fileSize,
+        extension: extension || file.extension || '',
+        file_type: fileType,
+        file_name: file.file_name || `arquivo_${Date.now()}.${extension || 'bin'}`,
+        processado: true,
+        processado_em: new Date().toISOString()
+      };
       
-      console.log(`Arquivo ${file.id} processado com sucesso (${fileType})`);
+      processedFiles.push(processedFile);
+      
+      const processingTime = (Date.now() - fileStartTime) / 1000;
+      console.log(`Arquivo ${fileId} processado com sucesso em ${processingTime.toFixed(2)}s (${fileType})`);
+      
     } catch (error) {
-      console.error(`Erro ao processar arquivo ${file.id}:`, error.message);
-      // Adiciona o arquivo mesmo sem o base64
+      console.error(`Erro ao processar arquivo ${fileId}:`, error.message);
+      
+      // Adiciona o arquivo mesmo com erro, para manter o registro
       processedFiles.push({
         ...file,
-        error: error.message
+        id: fileId,
+        processado: false,
+        erro: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        processado_em: new Date().toISOString()
       });
     }
   }
   
+  const totalTime = (Date.now() - startTime) / 1000;
+  const successCount = processedFiles.filter(f => f.processado).length;
+  const errorCount = processedFiles.length - successCount;
+  
+  console.log(`Processamento de arquivos concluído em ${totalTime.toFixed(2)}s. ` +
+              `Sucesso: ${successCount}, Falhas: ${errorCount}`);
+              
   return processedFiles;
 }
 
@@ -474,25 +694,48 @@ async function saveBufferToTempFile(buffer, extension = 'mp3') {
     fs.mkdirSync(tempDir, { recursive: true });
   }
   
-  const tempFile = path.join(tempDir, `audio_${Date.now()}.${extension}`);
-  fs.writeFileSync(tempFile, buffer);
+  const tempFile = path.join(tempDir, `audio_${Date.now()}_${Math.floor(Math.random() * 1000)}.${extension}`);
+  await fs.promises.writeFile(tempFile, buffer);
   return tempFile;
 }
 
 // Função para converter áudio para formato mp3 compatível com OpenAI
 async function convertAudioToMp3(inputFile) {
   return new Promise((resolve, reject) => {
-    const outputFile = inputFile.replace(/\.[^\.]+$/, '.mp3');
+    // Cria um nome de arquivo de saída único
+    const outputFile = path.join(
+      path.dirname(inputFile),
+      `converted_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`
+    );
     
-    ffmpeg(inputFile)
+    console.log(`Convertendo áudio: ${inputFile} -> ${outputFile}`);
+    
+    ffmpeg()
+      .input(inputFile)
       .output(outputFile)
       .audioCodec('libmp3lame')
+      .audioBitrate('128k')
+      .outputOptions([
+        '-ar 16000',
+        '-ac 1',
+        '-f mp3'
+      ])
+      .on('start', (commandLine) => {
+        console.log('Comando FFmpeg:', commandLine);
+      })
       .on('end', () => {
+        console.log(`Conversão concluída: ${outputFile}`);
+        // Remove o arquivo de entrada após a conversão
+        fs.unlink(inputFile, (err) => {
+          if (err) console.warn(`Não foi possível remover arquivo temporário ${inputFile}:`, err);
+        });
         resolve(outputFile);
       })
-      .on('error', (err) => {
+      .on('error', (err, stdout, stderr) => {
         console.error('Erro na conversão do áudio:', err);
-        reject(err);
+        console.error('Saída do FFmpeg (stdout):', stdout);
+        console.error('Erro do FFmpeg (stderr):', stderr);
+        reject(new Error(`Falha na conversão do áudio: ${err.message}`));
       })
       .run();
   });
@@ -503,23 +746,87 @@ async function transcribeAudio(audioFilePath) {
   try {
     if (!process.env.OPENAI_API_KEY) {
       console.warn('OPENAI_API_KEY não configurada, pulando transcrição');
-      return null;
+      return '[Transcrição indisponível: Chave da API não configurada]';
     }
     
-    console.log(`Transcrevendo áudio: ${audioFilePath}`);
+    console.log(`Iniciando transcrição do áudio: ${audioFilePath}`);
     
-    const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(audioFilePath),
-      model: 'whisper-1',
-      language: 'pt', // Idioma português
-      response_format: 'text',
+    // Verifica se o arquivo existe e tem tamanho maior que zero
+    const stats = await fs.promises.stat(audioFilePath);
+    if (stats.size === 0) {
+      console.warn('Arquivo de áudio vazio:', audioFilePath);
+      return '[Transcrição indisponível: Arquivo de áudio vazio]';
+    }
+    
+    console.log(`Tamanho do arquivo de áudio: ${(stats.size / 1024).toFixed(2)} KB`);
+    
+    // Configura o tempo limite para a requisição (30 segundos)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    
+    try {
+      const transcription = await openai.audio.transcriptions.create(
+        {
+          file: fs.createReadStream(audioFilePath),
+          model: 'whisper-1',
+          language: 'pt', // Idioma português
+          response_format: 'text',
+        },
+        {
+          signal: controller.signal,
+          maxBodyLength: 1024 * 1024 * 10, // 10MB
+          timeout: 30000 // 30 segundos
+        }
+      );
+      
+      clearTimeout(timeoutId);
+      
+      if (!transcription) {
+        console.warn('Transcrição retornou vazia');
+        return '[Transcrição indisponível: Resposta vazia da API]';
+      }
+      
+      console.log('Transcrição concluída com sucesso');
+      return transcription.toString().trim();
+      
+    } catch (apiError) {
+      clearTimeout(timeoutId);
+      
+      if (apiError.name === 'AbortError') {
+        console.error('Tempo limite excedido ao transcrever áudio');
+        return '[Transcrição indisponível: Tempo limite excedido]';
+      }
+      
+      if (apiError.response) {
+        // Erro da API da OpenAI
+        console.error('Erro na API da OpenAI:', {
+          status: apiError.response.status,
+          statusText: apiError.response.statusText,
+          data: apiError.response.data
+        });
+      } else if (apiError.request) {
+        // Erro de requisição (sem resposta)
+        console.error('Erro na requisição para a API da OpenAI:', {
+          message: apiError.message,
+          code: apiError.code
+        });
+      } else {
+        // Outros erros
+        console.error('Erro ao configurar a requisição para a API da OpenAI:', apiError.message);
+      }
+      
+      return `[Erro na transcrição: ${apiError.message || 'Erro desconhecido'}]`;
+    }
+    
+  } catch (error) {
+    console.error('Erro ao transcrever áudio:', {
+      message: error.message,
+      stack: error.stack,
+      filePath: audioFilePath,
+      fileExists: fs.existsSync(audioFilePath)
     });
     
-    console.log('Transcrição concluída com sucesso');
-    return transcription;
-  } catch (error) {
-    console.error('Erro ao transcrever áudio:', error.message);
-    return null;
+    return `[Erro na transcrição: ${error.message || 'Erro desconhecido'}]`;
   }
 }
 
@@ -529,48 +836,84 @@ async function processAudios(audios) {
   
   for (const audio of audios) {
     console.log(`Processando áudio: ${audio.id}`);
+    let tempFile, mp3File;
+    
     try {
       if (!audio.url) {
         console.warn(`Áudio ${audio.id} não tem URL, pulando...`);
         continue;
       }
       
+      // Baixar o arquivo de áudio
+      console.log(`Baixando áudio de: ${audio.url}`);
       const fileData = await downloadFile(audio.url);
-      if (!fileData) {
-        console.warn(`Não foi possível baixar o áudio ${audio.id}, pulando...`);
+      if (!fileData || !fileData.data) {
+        console.warn(`Não foi possível baixar o áudio ${audio.id}: dados inválidos`);
         continue;
       }
       
+      // Converter para base64 para armazenamento
       const base64Data = convertToBase64(fileData.data, fileData.contentType);
       
-      // Salvar o áudio em um arquivo temporário
-      const tempFile = await saveBufferToTempFile(fileData.data);
-      
-      // Converter para formato compatível com OpenAI se necessário
-      const mp3File = await convertAudioToMp3(tempFile);
-      
-      // Transcrever o áudio
-      const transcricao = await transcribeAudio(mp3File);
-      
-      // Limpar arquivos temporários
       try {
-        fs.unlinkSync(tempFile);
-        fs.unlinkSync(mp3File);
-      } catch (e) {
-        console.warn('Erro ao limpar arquivos temporários:', e.message);
+        // Salvar em arquivo temporário
+        const extension = audio.file_name ? path.extname(audio.file_name).substring(1) || 'mp3' : 'mp3';
+        tempFile = await saveBufferToTempFile(fileData.data, extension);
+        console.log(`Áudio salvo temporariamente em: ${tempFile}`);
+        
+        // Converter para MP3 se necessário
+        mp3File = await convertAudioToMp3(tempFile);
+        
+        // Transcrever o áudio
+        console.log(`Transcrevendo áudio: ${mp3File}`);
+        const transcricao = await transcribeAudio(mp3File);
+        
+        processedAudios.push({
+          ...audio,
+          base64: base64Data,
+          transcricao: transcricao || '[Transcrição indisponível]',
+          processado: true,
+          tamanho: fileData.data.length,
+          contentType: fileData.contentType
+        });
+        
+      } catch (processError) {
+        console.error(`Erro ao processar áudio ${audio.id}:`, processError);
+        // Adiciona o áudio mesmo sem transcrição
+        processedAudios.push({
+          ...audio,
+          base64: base64Data,
+          transcricao: '[Erro ao processar áudio]',
+          processado: false,
+          erro: processError.message
+        });
       }
       
+    } catch (error) {
+      console.error(`Erro ao processar áudio ${audio.id}:`, error);
       processedAudios.push({
         ...audio,
-        base64: base64Data,
-        transcricao: transcricao || '[Transcrição indisponível]',
-        processado: true
+        processado: false,
+        erro: error.message
       });
-    } catch (error) {
-      console.error(`Erro ao processar áudio ${audio.id}:`, error.message);
+    } finally {
+      // Limpeza de arquivos temporários
+      const cleanup = async (file) => {
+        if (file && fs.existsSync(file)) {
+          try {
+            await fs.promises.unlink(file);
+          } catch (e) {
+            console.warn(`Não foi possível remover arquivo temporário ${file}:`, e.message);
+          }
+        }
+      };
+      
+      if (tempFile) await cleanup(tempFile);
+      if (mp3File) await cleanup(mp3File);
     }
   }
   
+  console.log(`Processamento de áudios concluído. ${processedAudios.length} de ${audios.length} processados com sucesso.`);
   return processedAudios;
 }
 
