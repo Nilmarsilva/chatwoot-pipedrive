@@ -2,15 +2,15 @@ version: '3.8'
 
 services:
   chatwoot-pipedrive:
-    # No modo Swarm, precisamos usar uma imagem pré-construída
+    # Usando imagem base do Node.js 16 com Alpine
     image: node:16-alpine
     
-    # Substituição para o build local usando comando personalizado
-    # Isso instala as dependências e inicia a aplicação
-    # Usando um script mais simples para evitar problemas de sintaxe
+    # Comando personalizado para instalação e inicialização
     command: |
-      sh -c 'apk add --no-cache ffmpeg git && \
-      mkdir -p /app/logs /app/temp && \
+      sh -c 'echo "Instalando dependências do sistema..." && \
+      apk add --no-cache ffmpeg ffmpeg-libs git python3 make g++ && \
+      mkdir -p /app/logs /app/temp /app/data && \
+      chmod -R 777 /app/logs /app/temp /app/data && \
       cd /app && \
       echo "Preparando o código..." && \
       if [ -d /app/.git ]; then \
@@ -18,17 +18,27 @@ services:
         git pull; \
       else \
         echo "Clonando novo repositório" && \
-        # Excluir todos os arquivos exceto logs e temp
-        find /app -mindepth 1 -maxdepth 1 ! -name logs ! -name temp -exec rm -rf {} \; && \
+        find /app -mindepth 1 -maxdepth 1 ! -name logs ! -name temp ! -name data -exec rm -rf {} \; && \
         git clone https://github.com/Nilmarsilva/chatwoot-pipedrive.git /tmp/repo && \
         cp -r /tmp/repo/. /app/ && \
         rm -rf /tmp/repo; \
       fi && \
-      npm install && \
+      echo "Instalando dependências do Node.js..." && \
+      npm install --no-optional && \
+      echo "Iniciando aplicação..." && \
       npm run start:new'
     
-    # Configurações de deploy para o modo Swarm
-    # Removido o mapeamento de porta direto, pois o Traefik gerenciará isso
+    # Configurações de rede
+    networks:
+      - traefik_public
+    
+    # Configurações de volumes
+    volumes:
+      - chatwoot_pipedrive_app_data:/app
+      - chatwoot_pipedrive_logs_data:/app/logs
+      - chatwoot_pipedrive_temp_data:/app/temp
+    
+    # Configurações de ambiente
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -37,48 +47,47 @@ services:
       - PIPEDRIVE_API_TOKEN=${PIPEDRIVE_API_TOKEN}
       - PIPEDRIVE_BASE_URL=${PIPEDRIVE_BASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-    # Usando volumes com nomes específicos para evitar duplicação
-    volumes:
-      - chatwoot_pipedrive_logs_data:/app/logs
-      - chatwoot_pipedrive_temp_data:/app/temp
-      - chatwoot_pipedrive_app_data:/app
-    networks:
-      - network_public
-    # Mover labels para dentro da seção deploy para compatibilidade com Swarm
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: any
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.chatwoot-pipedrive.rule=Host(`webhookdata.authbrasil.app.br`)"
-        - "traefik.http.services.chatwoot-pipedrive.loadbalancer.server.port=3000"
-        - "traefik.http.routers.chatwoot-pipedrive.entrypoints=websecure"
-        - "traefik.http.routers.chatwoot-pipedrive.tls=true"
-        - "traefik.http.routers.chatwoot-pipedrive.tls.certresolver=letsencryptresolver"
-    # Healthcheck é suportado no Swarm
+    
+    # Configurações de healthcheck
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+    
+    # Configurações de deploy para o Docker Swarm
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.chatwoot-pipedrive.rule=Host(`webhookdata.authbrasil.app.br`)"
+        - "traefik.http.routers.chatwoot-pipedrive.entrypoints=websecure"
+        - "traefik.http.routers.chatwoot-pipedrive.tls.certresolver=letsencryptresolver"
+        - "traefik.http.services.chatwoot-pipedrive.loadbalancer.server.port=3000"
+        - "traefik.docker.network=traefik_public"
 
+# Redes
 networks:
-  network_public:
+  traefik_public:
     external: true
 
-# Volumes nomeados para persistência de dados
+# Volumes para persistência de dados
 volumes:
   chatwoot_pipedrive_logs_data:
     name: chatwoot_pipedrive_logs_data
     driver: local
-    external: false
   chatwoot_pipedrive_temp_data:
     name: chatwoot_pipedrive_temp_data
     driver: local
-    external: false
   chatwoot_pipedrive_app_data:
     name: chatwoot_pipedrive_app_data
     driver: local
-    external: false
