@@ -1533,8 +1533,28 @@ app.post('/webhook', async (req, res) => {
     // Para áudios, apenas registramos a transcrição no histórico
     console.log(`${processedAudios.length} áudios foram transcritos e incluídos no histórico`);
     
-    // Anexar todos os arquivos processados (exceto áudios) ao Deal
-    console.log(`Preparando para anexar ${processedFiles.length} arquivos ao Deal...`);
+    // Garantir que temos arrays válidos
+    const safeProcessedImages = Array.isArray(processedImages) ? processedImages : [];
+    const safeProcessedFiles = Array.isArray(processedFiles) ? processedFiles : [];
+    
+    // Combinar arquivos e imagens em uma única lista para processamento
+    const todosOsArquivos = [
+      ...safeProcessedImages.map(img => ({
+        ...img,
+        isImage: true,
+        file_type: 'image',
+        content_type: img.content_type || 'image/jpeg' // Default para JPEG se não especificado
+      })),
+      ...safeProcessedFiles
+        .filter(f => f && f.base64 && f.file_type !== 'audio')
+        .map(f => ({
+          ...f,
+          isImage: false,
+          content_type: f.content_type || 'application/octet-stream'
+        }))
+    ].filter(Boolean); // Remover itens nulos/undefined
+    
+    console.log(`Preparando para anexar ${todosOsArquivos.length} itens (imagens: ${safeProcessedImages.length}, arquivos: ${safeProcessedFiles.length}) ao Deal...`);
     
     // Lista de tipos de arquivo que devem ser anexados
     const tiposAnexaveis = [
@@ -1552,59 +1572,120 @@ app.post('/webhook', async (req, res) => {
       'json', 'xml', 'sql', 'log'
     ];
     
-    // Anexar todos os arquivos processados (exceto áudios)
-    for (const file of processedFiles) {
-      // Pular arquivos de áudio, pois já foram transcritos
-      if (file.file_type === 'audio') {
-        console.log(`Pulando anexo de áudio (já transcrito): ${file.file_name || file.id}`);
-        continue;
-      }
-      
-      // Verificar se temos o conteúdo do arquivo em base64
-      if (!file.base64) {
-        console.log(`Arquivo ${file.id} não possui conteúdo em base64, pulando...`);
+    // Mapeamento de tipos MIME para extensões
+    const mimeToExt = {
+      // Documentos
+      'application/pdf': 'pdf',
+      'application/msword': 'doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/rtf': 'rtf',
+      'application/vnd.oasis.opendocument.text': 'odt',
+      'text/plain': 'txt',
+      'text/markdown': 'md',
+      'application/vnd.apple.pages': 'pages',
+      // Planilhas
+      'application/vnd.ms-excel': 'xls',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'text/csv': 'csv',
+      'application/vnd.oasis.opendocument.spreadsheet': 'ods',
+      'application/vnd.apple.numbers': 'numbers',
+      // Apresentações
+      'application/vnd.ms-powerpoint': 'ppt',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'application/vnd.oasis.opendocument.presentation': 'odp',
+      'application/vnd.apple.keynote': 'key',
+      // Imagens
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'image/bmp': 'bmp',
+      'image/webp': 'webp',
+      'image/svg+xml': 'svg',
+      'image/tiff': 'tiff',
+      'image/heic': 'heic',
+      'image/heif': 'heif',
+      // Compactados
+      'application/zip': 'zip',
+      'application/x-rar-compressed': 'rar',
+      'application/x-7z-compressed': '7z',
+      'application/x-tar': 'tar',
+      'application/gzip': 'gz',
+      'application/x-bzip2': 'bz2',
+      // Outros
+      'application/json': 'json',
+      'application/xml': 'xml',
+      'application/sql': 'sql',
+      'text/x-log': 'log'
+    };
+    
+    // Anexar todos os itens processados
+    for (const file of todosOsArquivos) {
+      if (!file || !file.base64) {
+        console.log('Item inválido ou sem conteúdo, pulando...');
         continue;
       }
       
       try {
-        // Extrair extensão do nome do arquivo
+        // Extrair nome e extensão do arquivo original
+        let fileName = file.file_name || '';
         let extension = '';
-        if (file.file_name) {
-          const parts = file.file_name.split('.');
+        
+        // Determinar o tipo de conteúdo
+        const contentType = file.content_type || 'application/octet-stream';
+        
+        // Se for uma imagem, garantir que o tipo MIME está correto
+        if (file.isImage && !contentType.startsWith('image/')) {
+          console.log(`Ajustando tipo MIME para imagem: ${fileName}`);
+          file.content_type = `image/${contentType.split('/').pop() || 'jpeg'}`;
+        }
+        
+        // Se tiver um nome de arquivo, extrair a extensão
+        if (fileName) {
+          const parts = fileName.split('.');
           if (parts.length > 1) {
             extension = parts.pop().toLowerCase();
+            fileName = parts.join('.'); // Nome sem a extensão
           }
         }
         
         // Se não tiver extensão, tenta determinar pelo content_type
-        if (!extension && file.content_type) {
-          const typeMatch = file.content_type.split('/');
-          if (typeMatch.length > 1) {
-            extension = typeMatch[1];
+        if (!extension && contentType) {
+          // Remover parâmetros do content-type (ex: 'application/pdf; charset=UTF-8' -> 'application/pdf')
+          const cleanContentType = contentType.split(';')[0].trim();
+          extension = mimeToExt[cleanContentType] || '';
+          
+          // Se ainda não encontrou, tenta extrair do próprio content-type
+          if (!extension && cleanContentType.includes('/')) {
+            extension = cleanContentType.split('/').pop().toLowerCase();
+            // Remover parâmetros e caracteres inválidos
+            extension = extension.replace(/[^a-z0-9]/g, '');
           }
         }
         
-        // Criar nome do arquivo para anexo
-        const fileName = file.file_name || `arquivo_${file.id}${extension ? '.' + extension : ''}`;
-        const contentType = file.content_type || 'application/octet-stream';
+        // Montar o nome final do arquivo
+        const finalFileName = `${fileName || 'arquivo_' + file.id}${extension ? '.' + extension : ''}`;
         
-        // Verificar se o tipo de arquivo deve ser anexado
-        const fileType = file.file_type || extension || 'unknown';
-        if (!tiposAnexaveis.some(tipo => fileType.toLowerCase().includes(tipo))) {
-          console.log(`⚠️ Tipo de arquivo não suportado para anexo: ${fileType} (${fileName})`);
+        // Determinar o tipo de arquivo para verificação
+        const fileType = (file.file_type || extension || '').toLowerCase();
+        const isTypeSupported = tiposAnexaveis.some(tipo => 
+          fileType.includes(tipo.toLowerCase())
+        );
+        
+        if (!isTypeSupported) {
+          console.log(`⚠️ Tipo de arquivo não suportado para anexo: ${fileType || 'desconhecido'} (${finalFileName})`);
           continue;
         }
         
-        console.log(`📎 Anexando arquivo: ${fileName} (${contentType}, ${file.size || 'tamanho desconhecido'} bytes)`);
+        console.log(`📎 Anexando arquivo: ${finalFileName} (${contentType}, ${file.size || 'tamanho desconhecido'} bytes)`);
         
         // Anexar o arquivo ao Deal
-        const fileData = await attachFileToDeal(dealId, fileName, file.base64, contentType);
+        const fileData = await attachFileToDeal(dealId, finalFileName, file.base64, contentType);
         
         if (fileData && fileData.data) {
           anexos.push({
             tipo: file.file_type || fileType,
             id: fileData.data.id,
-            nome: fileName,
+            nome: finalFileName,
             tamanho: file.size || 'desconhecido',
             url: fileData.data.url,
             mime_type: contentType
