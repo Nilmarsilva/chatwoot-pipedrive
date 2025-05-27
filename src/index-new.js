@@ -930,16 +930,22 @@ app.post('/webhook', async (req, res) => {
     console.log('Dados do contato extraídos:', JSON.stringify(contactData, null, 2));
     
     // Busca histórico completo de mensagens
-    const accountId = webhookData.account_id || webhookData.account?.id;
+    const accountId = webhookData.account_id || webhookData.account?.id || webhookData.inbox_id;
     if (!accountId) {
-      console.error('ID da conta não encontrado no webhook');
+      console.error('ID da conta não encontrado no webhook. Campos disponíveis:', {
+        account_id: webhookData.account_id,
+        account: webhookData.account,
+        inbox_id: webhookData.inbox_id,
+        body_keys: Object.keys(webhookData)
+      });
       return res.status(400).json({ 
         status: 'erro', 
-        motivo: 'ID da conta não encontrado' 
+        motivo: 'ID da conta não encontrado no webhook',
+        campos_disponiveis: Object.keys(webhookData)
       });
     }
     
-    console.log(`Buscando histórico completo da conversa ${conversationId} na conta ${accountId}...`);
+    console.log(`Buscando histórico completo da conversa ${conversationId} na conta/inbox ${accountId}...`);
     const chatwootMessages = await getChatwootMessages(conversationId, accountId);
     console.log(`Encontradas ${chatwootMessages.length} mensagens no histórico`);
     
