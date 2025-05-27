@@ -803,30 +803,33 @@ app.post('/webhook', async (req, res) => {
     // Processa o corpo da requisição
     let webhookData;
     
-    // Se o corpo for uma string JSON, tenta fazer o parse
-    if (typeof req.body === 'string') {
+    // Se for um array (formato do Chatwoot), pega o primeiro item
+    if (Array.isArray(req.body) && req.body.length > 0) {
+      webhookData = req.body[0].body;
+      console.log('Webhook processado (formato array Chatwoot):', JSON.stringify(webhookData, null, 2));
+    }
+    // Se for um objeto direto (para compatibilidade com testes)
+    else if (req.body && typeof req.body === 'object') {
+      // Se tiver a propriedade body, assume que é o formato do Chatwoot
+      webhookData = req.body.body || req.body;
+      console.log('Webhook processado (formato objeto):', JSON.stringify(webhookData, null, 2));
+    }
+    // Se for uma string JSON
+    else if (typeof req.body === 'string') {
       try {
-        webhookData = JSON.parse(req.body);
+        const parsedBody = JSON.parse(req.body);
+        webhookData = Array.isArray(parsedBody) ? parsedBody[0]?.body : (parsedBody.body || parsedBody);
+        console.log('Webhook processado (formato string JSON):', JSON.stringify(webhookData, null, 2));
       } catch (e) {
         console.error('Erro ao fazer parse do JSON:', e);
         return res.status(400).json({ status: 'erro', motivo: 'Formato JSON inválido' });
       }
-    } 
-    // Se vier no formato { query: "{...}" }
-    else if (req.body && typeof req.body.query === 'string') {
-      try {
-        webhookData = JSON.parse(req.body.query);
-      } catch (e) {
-        console.error('Erro ao fazer parse do JSON da query:', e);
-        return res.status(400).json({ status: 'erro', motivo: 'Formato JSON inválido no campo query' });
-      }
-    } 
-    // Se já for um objeto, usa diretamente
-    else {
-      webhookData = req.body;
     }
     
-    console.log('Dados do webhook processados:', JSON.stringify(webhookData, null, 2));
+    if (!webhookData) {
+      console.error('Não foi possível processar os dados do webhook');
+      return res.status(400).json({ status: 'erro', motivo: 'Formato de webhook não suportado' });
+    }
     
     // Verifica se o status é "resolved"
     if (webhookData.status !== 'resolved') {
