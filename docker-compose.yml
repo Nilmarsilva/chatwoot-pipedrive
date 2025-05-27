@@ -8,9 +8,10 @@ services:
     # Substituição para o build local usando comando personalizado
     # Isso instala as dependências e inicia a aplicação
     command: >
-      sh -c "apk add --no-cache ffmpeg &&
+      sh -c "apk add --no-cache ffmpeg git &&
              mkdir -p /app/logs /app/temp &&
              cd /app &&
+             git clone https://github.com/Nilmarsilva/chatwoot-pipedrive.git . &&
              npm install &&
              npm run start:new"
     
@@ -24,13 +25,11 @@ services:
       - PIPEDRIVE_API_TOKEN=${PIPEDRIVE_API_TOKEN}
       - PIPEDRIVE_BASE_URL=${PIPEDRIVE_BASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-    # Monta o código fonte no container
+    # Usando apenas volumes nomeados para compatibilidade com Swarm
     volumes:
-      - type: bind
-        source: ./
-        target: /app
       - chatwoot_pipedrive_logs:/app/logs
       - chatwoot_pipedrive_temp:/app/temp
+      - chatwoot_pipedrive_app:/app
     networks:
       - network_public
     # Mover labels para dentro da seção deploy para compatibilidade com Swarm
@@ -62,4 +61,6 @@ volumes:
   chatwoot_pipedrive_logs:
     driver: local
   chatwoot_pipedrive_temp:
+    driver: local
+  chatwoot_pipedrive_app:
     driver: local
