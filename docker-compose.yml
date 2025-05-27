@@ -11,7 +11,18 @@ services:
       sh -c "apk add --no-cache ffmpeg git &&
              mkdir -p /app/logs /app/temp &&
              cd /app &&
-             git clone https://github.com/Nilmarsilva/chatwoot-pipedrive.git . &&
+             if [ "$(ls -A /app)" ]; then
+               echo 'Directory not empty, pulling latest changes' &&
+               if [ -d .git ]; then
+                 git pull
+               else
+                 rm -rf /app/* /app/.* 2>/dev/null || true &&
+                 git clone https://github.com/Nilmarsilva/chatwoot-pipedrive.git .
+               fi
+             else
+               echo 'Directory empty, cloning repository' &&
+               git clone https://github.com/Nilmarsilva/chatwoot-pipedrive.git .
+             fi &&
              npm install &&
              npm run start:new"
     
