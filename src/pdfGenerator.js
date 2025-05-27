@@ -1,3 +1,4 @@
+/*
 // Módulo para gerar PDF com o histórico da conversa
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
@@ -166,12 +167,11 @@ async function generateConversationPDF(messages, contactData) {
               // Calcular dimensões para manter proporção
               const maxWidth = 400;
               const maxHeight = 300;
-              
-              // Adicionar imagem ao PDF
-              doc.image(imageResult.buffer, {
-                fit: [maxWidth, maxHeight],
-                align: 'center'
-              });
+　　 　 　 　 // Adicionar imagem ao PDF
+　　 　 　 　 doc.image(imageResult.buffer, {
+　　　　 　 　 fit: [maxWidth, maxHeight],
+　　　　 　 　 align: 'center'
+　　 　 　 　 });
             } else {
               doc.text('[Imagem não disponível para visualização]');
             }
@@ -333,3 +333,4 @@ async function generateConversationPDF(messages, contactData) {
 module.exports = {
   generateConversationPDF
 };
+*/

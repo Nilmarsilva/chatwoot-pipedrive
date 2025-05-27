@@ -1462,7 +1462,8 @@ app.post('/webhook', async (req, res) => {
     // Ordenar mensagens por data de criação
     todasMensagens.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
     
-    // Pulamos a criação da nota de texto, já que o PDF conterá todo o histórico
+    // COMENTADO: Geração de PDF temporariamente desativada
+    /*
     console.log('Pulando criação de nota de texto, pois o PDF conterá todo o histórico');
     
     // Gerar PDF com o histórico completo da conversa (incluindo imagens e documentos)
@@ -1514,38 +1515,116 @@ app.post('/webhook', async (req, res) => {
         console.error('Erro ao criar nota de fallback:', fallbackError.message);
       }
     }
+    */
     
+    // Criar nota de texto com o histórico completo da conversa
+    console.log('Criando nota de texto com o histórico da conversa...');
+    try {
+      const notaFormatada = formatNotaTexto(todasMensagens);
+      await createPipedriveNote(dealId, notaFormatada);
+      console.log('Nota de texto criada com sucesso no Pipedrive');
+    } catch (noteError) {
+      console.error('Erro ao criar nota de texto:', noteError.message);
+    }
     // Anexar apenas arquivos que não puderam ser incorporados no PDF
     // Por exemplo, arquivos muito grandes ou formatos não suportados
     const anexos = [];
     
-    // Para áudios, não anexamos o arquivo, apenas adicionamos a transcrição no PDF
-    // Pipedrive não aceita arquivos MP3/MP4, então usamos apenas a transcrição
-    console.log(`${processedAudios.length} áudios foram transcritos e incluídos no PDF`);
+    // Para áudios, apenas registramos a transcrição no histórico
+    console.log(`${processedAudios.length} áudios foram transcritos e incluídos no histórico`);
     
-    // Anexar apenas arquivos grandes ou formatos especiais que não puderam ser incorporados no PDF
+    // Anexar todos os arquivos processados (exceto áudios) ao Deal
+    console.log(`Preparando para anexar ${processedFiles.length} arquivos ao Deal...`);
+    
+    // Lista de tipos de arquivo que devem ser anexados
+    const tiposAnexaveis = [
+      // Documentos
+      'document', 'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'md', 'pages',
+      // Planilhas
+      'spreadsheet', 'xlsx', 'xls', 'csv', 'ods', 'numbers',
+      // Apresentações
+      'ppt', 'pptx', 'odp', 'key',
+      // Imagens
+      'jpeg', 'jpg', 'png', 'gif', 'bmp', 'webp', 'svg', 'tiff', 'tif', 'heic', 'heif',
+      // Compactados
+      'zip', 'rar', '7z', 'tar', 'gz', 'bz2',
+      // Outros
+      'json', 'xml', 'sql', 'log'
+    ];
+    
+    // Anexar todos os arquivos processados (exceto áudios)
     for (const file of processedFiles) {
-      // Verificar se é um arquivo que deve ser anexado separadamente
-      // Arquivos como .doc, .xls, ou arquivos muito grandes
-      const isSpecialFormat = file.file_type === 'document' || 
-                            file.file_type === 'spreadsheet' ||
-                            (file.size && parseInt(file.size) > 5 * 1024 * 1024); // > 5MB
+      // Pular arquivos de áudio, pois já foram transcritos
+      if (file.file_type === 'audio') {
+        console.log(`Pulando anexo de áudio (já transcrito): ${file.file_name || file.id}`);
+        continue;
+      }
       
-      if (file.base64 && isSpecialFormat) {
-        try {
-          const extension = file.extension || 'pdf';
-          const fileName = `${file.file_name || 'arquivo'}_${file.id}.${extension}`;
-          const fileData = await attachFileToDeal(dealId, fileName, file.base64, file.content_type || 'application/octet-stream');
-          if (fileData) {
-            anexos.push({
-              tipo: file.file_type || 'arquivo',
-              id: fileData.id,
-              nome: fileName
-            });
-            console.log(`Arquivo ${fileName} anexado separadamente ao Deal`);
+      // Verificar se temos o conteúdo do arquivo em base64
+      if (!file.base64) {
+        console.log(`Arquivo ${file.id} não possui conteúdo em base64, pulando...`);
+        continue;
+      }
+      
+      try {
+        // Extrair extensão do nome do arquivo
+        let extension = '';
+        if (file.file_name) {
+          const parts = file.file_name.split('.');
+          if (parts.length > 1) {
+            extension = parts.pop().toLowerCase();
           }
-        } catch (error) {
-          console.error(`Erro ao anexar arquivo ${file.id}:`, error.message);
+        }
+        
+        // Se não tiver extensão, tenta determinar pelo content_type
+        if (!extension && file.content_type) {
+          const typeMatch = file.content_type.split('/');
+          if (typeMatch.length > 1) {
+            extension = typeMatch[1];
+          }
+        }
+        
+        // Criar nome do arquivo para anexo
+        const fileName = file.file_name || `arquivo_${file.id}${extension ? '.' + extension : ''}`;
+        const contentType = file.content_type || 'application/octet-stream';
+        
+        // Verificar se o tipo de arquivo deve ser anexado
+        const fileType = file.file_type || extension || 'unknown';
+        if (!tiposAnexaveis.some(tipo => fileType.toLowerCase().includes(tipo))) {
+          console.log(`⚠️ Tipo de arquivo não suportado para anexo: ${fileType} (${fileName})`);
+          continue;
+        }
+        
+        console.log(`📎 Anexando arquivo: ${fileName} (${contentType}, ${file.size || 'tamanho desconhecido'} bytes)`);
+        
+        // Anexar o arquivo ao Deal
+        const fileData = await attachFileToDeal(dealId, fileName, file.base64, contentType);
+        
+        if (fileData && fileData.data) {
+          anexos.push({
+            tipo: file.file_type || fileType,
+            id: fileData.data.id,
+            nome: fileName,
+            tamanho: file.size || 'desconhecido',
+            url: fileData.data.url,
+            mime_type: contentType
+          });
+          
+          console.log(`✅ Arquivo anexado com sucesso: ${fileName} (ID: ${fileData.data.id})`);
+        } else {
+          console.warn(`⚠️ Não foi possível anexar o arquivo: ${fileName}`);
+          console.warn('Resposta da API:', JSON.stringify(fileData, null, 2));
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao anexar arquivo ${file.id}:`, error.message);
+        if (error.response) {
+          console.error('Detalhes do erro:', {
+            status: error.response.status,
+            statusText: error.response.statusText,
+            data: error.response.data
+          });
+        } else {
+          console.error('Stack trace:', error.stack);
         }
       }
     }
