@@ -7,24 +7,22 @@ services:
     
     # Substituição para o build local usando comando personalizado
     # Isso instala as dependências e inicia a aplicação
-    command: >
-      sh -c "apk add --no-cache ffmpeg git &&
-             mkdir -p /app/logs /app/temp &&
-             cd /app &&
-             if [ "$$(ls -A /app)" ]; then
-               echo 'Directory not empty, pulling latest changes' &&
-               if [ -d .git ]; then
-                 git pull
-               else
-                 rm -rf /app/* /app/.* 2>/dev/null || true &&
-                 git clone https://github.com/Nilmarsilva/chatwoot-pipedrive.git .
-               fi
-             else
-               echo 'Directory empty, cloning repository' &&
-               git clone https://github.com/Nilmarsilva/chatwoot-pipedrive.git .
-             fi &&
-             npm install &&
-             npm run start:new"
+    # Usando um script mais simples para evitar problemas de sintaxe
+    command: |
+      sh -c 'apk add --no-cache ffmpeg git && \
+      mkdir -p /app/logs /app/temp && \
+      cd /app && \
+      echo "Preparando o código..." && \
+      if [ -d .git ]; then \
+        echo "Atualizando repositório existente" && \
+        git pull; \
+      else \
+        echo "Clonando novo repositório" && \
+        rm -rf /app/* && \
+        git clone https://github.com/Nilmarsilva/chatwoot-pipedrive.git .; \
+      fi && \
+      npm install && \
+      npm run start:new'
     
     # Configurações de deploy para o modo Swarm
     # Removido o mapeamento de porta direto, pois o Traefik gerenciará isso
