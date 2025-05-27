@@ -55,7 +55,7 @@ services:
         - "traefik.http.services.chatwoot-pipedrive.loadbalancer.server.port=3000"
         - "traefik.http.routers.chatwoot-pipedrive.entrypoints=websecure"
         - "traefik.http.routers.chatwoot-pipedrive.tls=true"
-        - "traefik.http.routers.chatwoot-pipedrive.tls.certresolver=myresolver"
+        - "traefik.http.routers.chatwoot-pipedrive.tls.certresolver=letsencryptresolver"
     # Healthcheck é suportado no Swarm
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:3000/health"]
