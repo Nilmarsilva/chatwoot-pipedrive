@@ -1667,8 +1667,10 @@ app.post('/webhook', async (req, res) => {
         
         // Determinar o tipo de arquivo para verificação
         const fileType = (file.file_type || extension || '').toLowerCase();
-        const isTypeSupported = tiposAnexaveis.some(tipo => 
-          fileType.includes(tipo.toLowerCase())
+        // Para imagens, verificar se a extensão está na lista de tipos suportados
+        const isImageType = file.isImage && ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'tiff', 'tif', 'heic', 'heif'].includes(extension);
+        const isTypeSupported = isImageType || tiposAnexaveis.some(tipo => 
+          fileType.includes(tipo.toLowerCase()) || extension.includes(tipo.toLowerCase())
         );
         
         if (!isTypeSupported) {
@@ -1681,19 +1683,24 @@ app.post('/webhook', async (req, res) => {
         // Anexar o arquivo ao Deal
         const fileData = await attachFileToDeal(dealId, finalFileName, file.base64, contentType);
         
-        if (fileData && fileData.data) {
+        // Verificar se o arquivo foi anexado com sucesso
+        // A API do Pipedrive retorna sucesso quando fileData.data.id existe
+        const isSuccess = fileData && fileData.data && fileData.data.id;
+        
+        if (isSuccess) {
           anexos.push({
-            tipo: file.file_type || fileType,
+            tipo: file.file_type || fileType || extension,
             id: fileData.data.id,
             nome: finalFileName,
             tamanho: file.size || 'desconhecido',
-            url: fileData.data.url,
+            url: fileData.data.url || `https://captacao.pipedrive.com/api/v1/files/${fileData.data.id}/download`,
             mime_type: contentType
           });
           
-          console.log(`✅ Arquivo anexado com sucesso: ${fileName} (ID: ${fileData.data.id})`);
+          console.log(`✅ Arquivo anexado com sucesso: ${finalFileName} (ID: ${fileData.data.id})`);
+          console.log(`🔗 URL do arquivo: ${anexos[anexos.length - 1].url}`);
         } else {
-          console.warn(`⚠️ Não foi possível anexar o arquivo: ${fileName}`);
+          console.warn(`⚠️ Não foi possível anexar o arquivo: ${finalFileName}`);
           console.warn('Resposta da API:', JSON.stringify(fileData, null, 2));
         }
       } catch (error) {
