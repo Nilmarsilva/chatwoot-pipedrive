@@ -1,0 +1,140 @@
+# PLANEJAMENTO DE REFATORAÇÃO - INTEGRAÇÃO CHATWOOT-PIPEDRIVE
+
+## HISTÓRICO DE MODIFICAÇÕES REALIZADAS
+
+### Anexação de Arquivos
+- Ajustada a lógica de anexação para garantir que os arquivos sejam anexados com seus nomes e extensões corretas
+- Expandida a lista de tipos de arquivo suportados incluindo:
+  - Documentos: pdf, doc, docx, txt, rtf, odt, md, pages
+  - Planilhas: xlsx, xls, csv, ods, numbers
+  - Apresentações: ppt, pptx, odp, key
+  - Imagens: jpeg, jpg, png, gif, bmp, webp, svg, tiff, tif, heic, heif
+  - Compactados: zip, rar, 7z, tar, gz, bz2
+  - Outros: json, xml, sql, log
+- Melhorada a extração de extensões e nomes de arquivos
+- Adicionado mapeamento de tipos MIME para extensões de arquivo
+- Corrigido o tratamento de imagens para garantir que sejam anexadas corretamente
+- Melhorada a verificação de sucesso na anexação de arquivos
+
+### Geração de PDF
+- Temporariamente desativada a geração de PDF
+- Ajustada a lógica para criar uma nota de texto com o histórico completo da conversa
+
+### Tratamento de Erros
+- Melhorias na captura de erros ao anexar arquivos
+- Logs detalhados sobre falhas e respostas da API do Pipedrive
+
+### Processamento de Mídias
+- Melhorado o processamento de imagens e arquivos
+- Adicionado suporte para mais tipos de arquivo
+- Corrigida a detecção de tipos MIME para imagens
+
+## PLANO DE REFATORAÇÃO
+
+### 1. Estrutura de Diretórios Proposta
+```
+src/
+├── index.js                 # Arquivo principal (simplificado)
+├── config/                  # Configurações
+│   └── config.js            # Configurações gerais ✅
+├── api/                     # Clientes de API
+│   ├── chatwoot.js          # Cliente para API do Chatwoot ✅
+│   └── pipedrive.js         # Cliente para API do Pipedrive ✅
+├── services/                # Serviços de negócio
+│   ├── messageService.js    # Processamento de mensagens
+│   ├── fileService.js       # Processamento de arquivos
+│   ├── audioService.js      # Processamento de áudio
+│   └── dealService.js       # Gerenciamento de deals
+├── utils/                   # Utilitários
+│   ├── formatters.js        # Formatadores (datas, textos) ✅
+│   └── fileUtils.js         # Utilitários para arquivos ✅
+└── routes/                  # Rotas da API
+    └── webhook.js           # Rota do webhook
+```
+
+### 2. Funções a serem movidas para cada módulo
+
+#### api/chatwoot.js ✅
+- `getChatwootMessages`: Busca mensagens do Chatwoot com paginação ✅
+- `updateChatwootContact`: Atualiza contato no Chatwoot com ID do Deal ✅
+- `getChatwootConversation`: Busca detalhes de uma conversa no Chatwoot (nova função) ✅
+
+#### api/pipedrive.js ✅
+- `createDeal`: Cria Deal no Pipedrive ✅
+- `createPerson`: Cria Pessoa no Pipedrive ✅
+- `findOrganization`: Busca Organização no Pipedrive ✅
+- `createOrganization`: Cria Organização no Pipedrive ✅
+- `updateDealRelations`: Atualiza Deal com relações ✅
+- `createPipedriveNote`: Cria nota no Pipedrive ✅
+- `attachFileToDeal`: Anexa arquivo ao Deal no Pipedrive ✅
+
+#### services/messageService.js
+- `filterMessages`: Filtra e organiza mensagens por tipo
+- `extractContactData`: Extrai dados do contato
+- `formatNotaTexto`: Formata mensagens para nota do Pipedrive
+
+#### services/fileService.js
+- `downloadFile`: Baixa arquivo de URL
+- `processImages`: Processa imagens
+- `processFiles`: Processa arquivos
+
+#### services/audioService.js
+- `saveBufferToTempFile`: Converte buffer de áudio para arquivo temporário
+- `convertAudioToMp3`: Converte áudio para formato mp3
+- `transcribeAudio`: Transcreve áudio usando a API da OpenAI
+- `processAudios`: Processa áudios com transcrição
+
+#### utils/formatters.js ✅
+- `formatarData`: Formata timestamp ✅
+- `formatarTexto`: Formata texto (nova função) ✅
+- `formatarTelefone`: Formata número de telefone (nova função) ✅
+
+#### utils/fileUtils.js ✅
+- `createDirIfNotExists`: Cria diretório se não existir ✅
+- `createTempDir`: Cria diretório temporário ✅
+- `saveBufferToTempFile`: Salva buffer em arquivo temporário ✅
+- `convertToBase64`: Converte buffer para base64 ✅
+- `getMimeToExtension`: Mapeia tipo MIME para extensão ✅
+- `logToFile`: Registra logs em arquivo ✅
+
+### 3. Plano de Implementação
+
+#### Fase 1: Preparação ✅
+1. Criar a estrutura de diretórios ✅
+2. Configurar os arquivos base com as importações necessárias ✅
+3. Criar o arquivo de configuração central ✅
+
+#### Fase 2: Extração de Módulos (Em andamento)
+1. Extrair funções utilitárias (formatters.js, fileUtils.js) ✅
+2. Extrair clientes de API (chatwoot.js, pipedrive.js) ✅
+3. Extrair serviços de negócio (messageService.js, fileService.js, audioService.js, dealService.js) ⏳
+
+#### Fase 3: Refatoração do Webhook
+1. Dividir o grande handler do webhook em funções menores
+2. Criar o arquivo de rotas webhook.js
+3. Integrar com os módulos criados
+
+#### Fase 4: Simplificação do Arquivo Principal
+1. Atualizar index.js para usar a nova estrutura
+2. Remover código duplicado
+3. Garantir que todas as dependências estejam corretamente importadas
+
+#### Fase 5: Testes e Validação
+1. Testar cada módulo isoladamente
+2. Testar a integração completa
+3. Verificar se todas as funcionalidades originais estão preservadas
+
+### 4. Benefícios Esperados
+
+1. **Manutenibilidade**: Código mais fácil de manter e entender
+2. **Testabilidade**: Funções isoladas são mais fáceis de testar
+3. **Escalabilidade**: Facilita adicionar novas funcionalidades
+4. **Colaboração**: Diferentes desenvolvedores podem trabalhar em diferentes módulos
+5. **Reutilização**: Funções podem ser reutilizadas em outros contextos
+
+### 5. Considerações para Implantação em Docker Swarm
+
+- Garantir que a nova estrutura seja compatível com a implantação via Docker Swarm
+- Manter a configuração via variáveis de ambiente
+- Preservar os volumes nomeados para persistência de dados
+- Manter a compatibilidade com o domínio webhookdata.authbrasil.app.br

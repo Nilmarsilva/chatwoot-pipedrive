@@ -1684,21 +1684,28 @@ app.post('/webhook', async (req, res) => {
         const fileData = await attachFileToDeal(dealId, finalFileName, file.base64, contentType);
         
         // Verificar se o arquivo foi anexado com sucesso
-        // A API do Pipedrive retorna sucesso quando fileData.data.id existe
-        const isSuccess = fileData && fileData.data && fileData.data.id;
+        // A API do Pipedrive retorna sucesso quando active_flag é true e há um ID
+        const response = fileData && fileData.data;
+        const isSuccess = response && 
+                        response.active_flag === true && 
+                        (response.id || response.file_id);
         
         if (isSuccess) {
+          const fileId = response.id || response.file_id;
+          const fileUrl = response.url || `https://captacao.pipedrive.com/api/v1/files/${fileId}/download`;
+          
           anexos.push({
-            tipo: file.file_type || fileType || extension,
-            id: fileData.data.id,
+            tipo: file.file_type || fileType || extension || 'arquivo',
+            id: fileId,
             nome: finalFileName,
-            tamanho: file.size || 'desconhecido',
-            url: fileData.data.url || `https://captacao.pipedrive.com/api/v1/files/${fileData.data.id}/download`,
+            tamanho: response.file_size || file.size || 'desconhecido',
+            url: fileUrl,
             mime_type: contentType
           });
           
-          console.log(`✅ Arquivo anexado com sucesso: ${finalFileName} (ID: ${fileData.data.id})`);
-          console.log(`🔗 URL do arquivo: ${anexos[anexos.length - 1].url}`);
+          console.log(`✅ Arquivo anexado com sucesso: ${finalFileName}`);
+          console.log(`   📌 ID: ${fileId}`);
+          console.log(`   🔗 URL: ${fileUrl}`);
         } else {
           console.warn(`⚠️ Não foi possível anexar o arquivo: ${finalFileName}`);
           console.warn('Resposta da API:', JSON.stringify(fileData, null, 2));
