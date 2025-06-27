@@ -2,6 +2,13 @@
 
 ## HISTÓRICO DE MODIFICAÇÕES REALIZADAS
 
+### Refatoração Completa (26/06/2025)
+- Modularização completa do código
+- Extração de serviços para messageService, fileService, audioService e dealService
+- Criação de clientes de API para Chatwoot e Pipedrive
+- Implementação de rotas separadas para webhook
+- Simplificação do arquivo principal
+
 ### Anexação de Arquivos
 - Ajustada a lógica de anexação para garantir que os arquivos sejam anexados com seus nomes e extensões corretas
 - Expandida a lista de tipos de arquivo suportados incluindo:
@@ -12,91 +19,71 @@
   - Compactados: zip, rar, 7z, tar, gz, bz2
   - Outros: json, xml, sql, log
 - Melhorada a extração de extensões e nomes de arquivos
-- Adicionado mapeamento de tipos MIME para extensões de arquivo
-- Corrigido o tratamento de imagens para garantir que sejam anexadas corretamente
-- Melhorada a verificação de sucesso na anexação de arquivos
 
-### Geração de PDF
-- Temporariamente desativada a geração de PDF
-- Ajustada a lógica para criar uma nota de texto com o histórico completo da conversa
-
-### Tratamento de Erros
-- Melhorias na captura de erros ao anexar arquivos
-- Logs detalhados sobre falhas e respostas da API do Pipedrive
-
-### Processamento de Mídias
-- Melhorado o processamento de imagens e arquivos
-- Adicionado suporte para mais tipos de arquivo
-- Corrigida a detecção de tipos MIME para imagens
-
-## PLANO DE REFATORAÇÃO
-
-### 1. Estrutura de Diretórios Proposta
+### 1. Estrutura de Diretórios Implementada
 ```
 src/
-├── index.js                 # Arquivo principal (simplificado)
+├── index.js                 # Arquivo principal (simplificado) 
 ├── config/                  # Configurações
-│   └── config.js            # Configurações gerais ✅
+│   └── config.js            # Configurações gerais 
 ├── api/                     # Clientes de API
-│   ├── chatwoot.js          # Cliente para API do Chatwoot ✅
-│   └── pipedrive.js         # Cliente para API do Pipedrive ✅
+│   ├── chatwoot.js          # Cliente para API do Chatwoot 
+│   └── pipedrive.js         # Cliente para API do Pipedrive 
 ├── services/                # Serviços de negócio
-│   ├── messageService.js    # Processamento de mensagens
-│   ├── fileService.js       # Processamento de arquivos
-│   ├── audioService.js      # Processamento de áudio
-│   └── dealService.js       # Gerenciamento de deals
+│   ├── messageService.js    # Processamento de mensagens 
+│   ├── fileService.js       # Processamento de arquivos 
+│   ├── audioService.js      # Processamento de áudio 
+│   └── dealService.js       # Gerenciamento de deals 
 ├── utils/                   # Utilitários
-│   ├── formatters.js        # Formatadores (datas, textos) ✅
-│   └── fileUtils.js         # Utilitários para arquivos ✅
+│   ├── formatters.js        # Formatadores (datas, textos) 
+│   └── fileUtils.js         # Utilitários para arquivos 
 └── routes/                  # Rotas da API
-    └── webhook.js           # Rota do webhook
+    └── webhook.js           # Rota do webhook 
 ```
 
-### 2. Funções a serem movidas para cada módulo
+### 2. Funções implementadas em cada módulo
 
-#### api/chatwoot.js ✅
-- `getChatwootMessages`: Busca mensagens do Chatwoot com paginação ✅
-- `updateChatwootContact`: Atualiza contato no Chatwoot com ID do Deal ✅
-- `getChatwootConversation`: Busca detalhes de uma conversa no Chatwoot (nova função) ✅
+#### api/chatwoot.js 
+- `getChatwootMessages`: Busca mensagens do Chatwoot com paginação 
+- `updateChatwootContact`: Atualiza contato no Chatwoot com ID do Deal 
+- `getChatwootConversation`: Busca detalhes de uma conversa no Chatwoot 
 
-#### api/pipedrive.js ✅
-- `createDeal`: Cria Deal no Pipedrive ✅
-- `createPerson`: Cria Pessoa no Pipedrive ✅
-- `findOrganization`: Busca Organização no Pipedrive ✅
-- `createOrganization`: Cria Organização no Pipedrive ✅
-- `updateDealRelations`: Atualiza Deal com relações ✅
-- `createPipedriveNote`: Cria nota no Pipedrive ✅
-- `attachFileToDeal`: Anexa arquivo ao Deal no Pipedrive ✅
+#### api/pipedrive.js 
+- `createDeal`: Cria Deal no Pipedrive 
+- `createPerson`: Cria Pessoa no Pipedrive 
+- `findOrganization`: Busca Organização no Pipedrive 
+- `createOrganization`: Cria Organização no Pipedrive 
+- `updateDealRelations`: Atualiza Deal com relações 
+- `createPipedriveNote`: Cria nota no Pipedrive 
+- `attachFileToDeal`: Anexa arquivo ao Deal no Pipedrive 
 
-#### services/messageService.js
-- `filterMessages`: Filtra e organiza mensagens por tipo
-- `extractContactData`: Extrai dados do contato
-- `formatNotaTexto`: Formata mensagens para nota do Pipedrive
+#### services/messageService.js 
+- `filterMessages`: Filtra e organiza mensagens por tipo 
+- `extractContactData`: Extrai dados do contato 
+- `formatNotaTexto`: Formata mensagens para nota do Pipedrive 
+- `combineMessages`: Combina mensagens de diferentes tipos em uma única lista 
 
-#### services/fileService.js
-- `downloadFile`: Baixa arquivo de URL
-- `processImages`: Processa imagens
-- `processFiles`: Processa arquivos
+#### services/fileService.js 
+- `downloadFile`: Baixa arquivo de URL 
+- `processImages`: Processa imagens 
+- `processFiles`: Processa arquivos 
+- `saveBufferToTempFile`: Salva buffer em arquivo temporário 
 
-#### services/audioService.js
-- `saveBufferToTempFile`: Converte buffer de áudio para arquivo temporário
-- `convertAudioToMp3`: Converte áudio para formato mp3
-- `transcribeAudio`: Transcreve áudio usando a API da OpenAI
-- `processAudios`: Processa áudios com transcrição
+#### services/audioService.js 
+- `saveBufferToTempFile`: Converte buffer de áudio para arquivo temporário 
+- `convertAudioToMp3`: Converte áudio para formato mp3 
+- `transcribeAudio`: Transcreve áudio usando a API da OpenAI 
+- `processAudios`: Processa áudios com transcrição 
 
-#### utils/formatters.js ✅
-- `formatarData`: Formata timestamp ✅
-- `formatarTexto`: Formata texto (nova função) ✅
-- `formatarTelefone`: Formata número de telefone (nova função) ✅
+#### services/dealService.js 
+- `createFullDeal`: Cria Deal completo com relações e anexos 
+- `processWebhook`: Processa webhook e cria Deal 
 
-#### utils/fileUtils.js ✅
-- `createDirIfNotExists`: Cria diretório se não existir ✅
-- `createTempDir`: Cria diretório temporário ✅
-- `saveBufferToTempFile`: Salva buffer em arquivo temporário ✅
-- `convertToBase64`: Converte buffer para base64 ✅
-- `getMimeToExtension`: Mapeia tipo MIME para extensão ✅
-- `logToFile`: Registra logs em arquivo ✅
+#### routes/webhook.js 
+- Rota POST para receber webhook do Chatwoot 
 
+#### index.js 
+- Inicialização do servidor e registro de rotas 
 ### 3. Plano de Implementação
 
 #### Fase 1: Preparação ✅
@@ -104,37 +91,55 @@ src/
 2. Configurar os arquivos base com as importações necessárias ✅
 3. Criar o arquivo de configuração central ✅
 
-#### Fase 2: Extração de Módulos (Em andamento)
+#### Fase 2: Extração de Módulos ✅
 1. Extrair funções utilitárias (formatters.js, fileUtils.js) ✅
 2. Extrair clientes de API (chatwoot.js, pipedrive.js) ✅
-3. Extrair serviços de negócio (messageService.js, fileService.js, audioService.js, dealService.js) ⏳
+3. Extrair serviços de negócio (messageService.js, fileService.js, audioService.js, dealService.js) ✅
 
-#### Fase 3: Refatoração do Webhook
-1. Dividir o grande handler do webhook em funções menores
-2. Criar o arquivo de rotas webhook.js
-3. Integrar com os módulos criados
+#### Fase 3: Refatoração do Webhook ✅
+1. Dividir o grande handler do webhook em funções menores ✅
+2. Criar o arquivo de rotas webhook.js ✅
+3. Integrar com os módulos criados ✅
 
-#### Fase 4: Simplificação do Arquivo Principal
-1. Atualizar index.js para usar a nova estrutura
-2. Remover código duplicado
-3. Garantir que todas as dependências estejam corretamente importadas
+#### Fase 4: Simplificação do Arquivo Principal ✅
+1. Atualizar index.js para usar a nova estrutura ✅
+2. Remover código duplicado ✅
+3. Garantir que todas as dependências estejam corretamente importadas ✅
 
 #### Fase 5: Testes e Validação
 1. Testar cada módulo isoladamente
 2. Testar a integração completa
 3. Verificar se todas as funcionalidades originais estão preservadas
 
-### 4. Benefícios Esperados
+### 4. Benefícios Alcançados
 
-1. **Manutenibilidade**: Código mais fácil de manter e entender
-2. **Testabilidade**: Funções isoladas são mais fáceis de testar
-3. **Escalabilidade**: Facilita adicionar novas funcionalidades
-4. **Colaboração**: Diferentes desenvolvedores podem trabalhar em diferentes módulos
-5. **Reutilização**: Funções podem ser reutilizadas em outros contextos
+1. **Manutenibilidade**: Código mais fácil de manter e entender ✅
+2. **Testabilidade**: Funções isoladas são mais fáceis de testar ✅
+3. **Escalabilidade**: Facilita adicionar novas funcionalidades ✅
+4. **Colaboração**: Diferentes desenvolvedores podem trabalhar em diferentes módulos ✅
+5. **Reutilização**: Funções podem ser reutilizadas em outros contextos ✅
 
 ### 5. Considerações para Implantação em Docker Swarm
 
-- Garantir que a nova estrutura seja compatível com a implantação via Docker Swarm
-- Manter a configuração via variáveis de ambiente
-- Preservar os volumes nomeados para persistência de dados
-- Manter a compatibilidade com o domínio webhookdata.authbrasil.app.br
+- Garantir que a nova estrutura seja compatível com a implantação via Docker Swarm ✅
+- Manter a configuração via variáveis de ambiente ✅
+- Preservar os volumes nomeados para persistência de dados ✅
+- Manter a compatibilidade com o domínio webhookdata.authbrasil.app.br ✅
+
+### 6. Próximos Passos
+
+1. **Testes Automatizados**
+   - Implementar testes unitários para cada módulo
+   - Implementar testes de integração para fluxos completos
+   - Configurar CI/CD para execução automática de testes
+
+2. **Documentação**
+   - Adicionar documentação detalhada para cada módulo
+   - Criar diagrama de fluxo da aplicação
+   - Documentar processo de instalação e configuração
+
+3. **Melhorias Futuras**
+   - Implementar sistema de filas para processamento assíncrono
+   - Adicionar dashboard para monitoramento de integrações
+   - Expandir suporte para outros tipos de mídia
+   - Implementar cache para melhorar performance
