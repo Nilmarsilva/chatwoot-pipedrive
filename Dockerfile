@@ -22,4 +22,4 @@ RUN mkdir -p logs temp
 EXPOSE 3000
 
 # Comando para iniciar a aplicação
-CMD ["npm", "run", "start:new"]
+CMD ["npm", "run", "start"]
