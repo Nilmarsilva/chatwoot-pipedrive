@@ -48,14 +48,20 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ status: 'erro', motivo: 'Formato de webhook não suportado' });
     }
     
-    // Verificar se é um evento de mensagem
+    // Verificar se é um evento válido (mensagem criada ou status de conversa alterado)
     const isMessageEvent = webhookData.event === 'message_created';
+    const isStatusChangeEvent = webhookData.event === 'conversation_status_changed';
     
-    // Se não for um evento de mensagem, apenas registra e retorna sucesso
-    if (!isMessageEvent) {
+    // Se não for um evento válido, apenas registra e retorna sucesso
+    if (!isMessageEvent && !isStatusChangeEvent) {
       console.log(`Evento ignorado: ${webhookData.event || 'desconhecido'}`);
-      return res.json({ status: 'ignorado', motivo: 'Evento não é de mensagem' });
+      return res.json({ status: 'ignorado', motivo: 'Evento não é válido para processamento' });
     }
+    
+    console.log(`Processando evento: ${webhookData.event}`);
+    console.log(`Status da conversa: ${webhookData.conversation?.status}`);
+    console.log(`Payload completo: ${JSON.stringify(webhookData)}`);
+    
     
     // Verificar se a conversa está fechada
     const isClosed = webhookData.conversation?.status === 'resolved';
