@@ -21,5 +21,11 @@ RUN mkdir -p logs temp
 # Expor porta
 EXPOSE 3000
 
-# Comando para iniciar a aplicação
-CMD ["npm", "run", "start"]
+# Verificar e mostrar o conteúdo do diretório para debug
+RUN echo "Conteúdo do diretório:" && ls -la
+
+# Verificar permissões do arquivo .env se existir
+RUN if [ -f .env ]; then echo "Arquivo .env encontrado" && cat .env | grep -v "=" | sed 's/=.*/=****/'; else echo "Arquivo .env não encontrado"; fi
+
+# Comando para iniciar a aplicação usando o script de inicialização
+CMD ["node", "start.js"]

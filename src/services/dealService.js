@@ -15,15 +15,16 @@ const { formatNotaTexto, combineMessages } = require('./messageService');
 const { logToFile } = require('../utils/fileUtils');
 
 /**
- * Cria um deal completo no Pipedrive com todas as relações e anexos
- * @param {Object} contactData - Dados do contato extraídos do webhook
+ * Cria um Deal completo no Pipedrive com todas as informações do contato e mensagens
+ * @param {Object} contactData - Dados do contato
  * @param {Object} messagesByType - Mensagens organizadas por tipo
  * @param {Array} processedImages - Imagens processadas
  * @param {Array} processedFiles - Arquivos processados
  * @param {Array} processedAudios - Áudios processados
- * @returns {Object} Informações do deal criado
+ * @param {string} [accountId] - ID da conta do Chatwoot (opcional)
+ * @returns {Promise<Object>} - Deal criado
  */
-async function createFullDeal(contactData, messagesByType, processedImages = [], processedFiles = [], processedAudios = []) {
+async function createFullDeal(contactData, messagesByType, processedImages = [], processedFiles = [], processedAudios = [], accountId) {
   try {
     console.log('Iniciando criação ou atualização de Deal no Pipedrive');
     
@@ -73,7 +74,8 @@ async function createFullDeal(contactData, messagesByType, processedImages = [],
       // 5. Atualizar contato no Chatwoot com o ID do deal
       try {
         console.log(`Atualizando contato ${contactData.id} no Chatwoot com Deal ID: ${dealId}`);
-        await updateChatwootContact(contactData.id, { id_deal_pipedrive: dealId });
+        // Usar o ID da conta extraído do payload para atualizar o contato
+        await updateChatwootContact(contactData.id, dealId, accountId);
         console.log('Contato atualizado com sucesso no Chatwoot');
       } catch (chatwootError) {
         console.error('Erro ao atualizar contato no Chatwoot:', chatwootError);
@@ -187,7 +189,8 @@ async function createFullDeal(contactData, messagesByType, processedImages = [],
     if (contactData.id) {
       console.log(`Atualizando contato ${contactData.id} no Chatwoot com ID do Deal ${dealId}`);
       try {
-        await updateChatwootContact(contactData.id, dealId);
+        // Usar o ID da conta extraído do payload para atualizar o contato
+        await updateChatwootContact(contactData.id, dealId, accountId);
       } catch (error) {
         console.error('Erro ao atualizar contato no Chatwoot:', error.message);
         logToFile('Erro ao atualizar contato', {
@@ -269,36 +272,52 @@ async function processWebhook(webhookData) {
     // Buscar mensagens da conversa
     const config = require('../config/config');
     
-    // Tentar obter o ID da conta das configurações ou do payload do webhook
-    let accountId = config.chatwoot.accountId;
+    // Sempre extrair o ID da conta do payload do webhook para suportar múltiplas contas
+    console.log('Extraindo ID da conta do payload do webhook...');
     
-    // Se não estiver nas configurações, tentar extrair do payload do webhook
+    // Estratégia de extração do ID da conta em ordem de prioridade
+    let accountId;
+    
+    // 1. Tentar extrair das mensagens (mais comum)
+    if (webhookData.messages && webhookData.messages.length > 0 && webhookData.messages[0].account_id) {
+      accountId = webhookData.messages[0].account_id;
+      console.log(`ID da conta encontrado nas mensagens: ${accountId}`);
+    }
+    // 2. Tentar extrair do campo account_id direto no payload
+    else if (webhookData.account_id) {
+      accountId = webhookData.account_id;
+      console.log(`ID da conta encontrado no campo account_id: ${accountId}`);
+    }
+    // 3. Tentar extrair do objeto account
+    else if (webhookData.account && webhookData.account.id) {
+      accountId = webhookData.account.id;
+      console.log(`ID da conta encontrado no objeto account: ${accountId}`);
+    }
+    // 4. Tentar extrair dos metadados
+    else if (webhookData.meta && webhookData.meta.account_id) {
+      accountId = webhookData.meta.account_id;
+      console.log(`ID da conta encontrado nos metadados: ${accountId}`);
+    }
+    // 5. Tentar extrair da conversa
+    else if (webhookData.conversation && webhookData.conversation.account_id) {
+      accountId = webhookData.conversation.account_id;
+      console.log(`ID da conta encontrado na conversa: ${accountId}`);
+    }
+    // 6. Último recurso: usar o valor da configuração (se existir)
+    else if (config.chatwoot.accountId) {
+      accountId = config.chatwoot.accountId;
+      console.log(`ID da conta obtido das configurações: ${accountId}`);
+    }
+    
+    // Verificar se conseguimos obter o ID da conta
     if (!accountId) {
-      console.log('ID da conta do Chatwoot não encontrado nas configurações. Tentando extrair do payload...');
-      
-      // Tentar extrair o ID da conta de vários locais possíveis no payload
-      // Analisando o payload, vemos que o account_id está dentro das mensagens
-      if (webhookData.messages && webhookData.messages.length > 0 && webhookData.messages[0].account_id) {
-        accountId = webhookData.messages[0].account_id;
-        console.log(`ID da conta encontrado nas mensagens: ${accountId}`);
-      } else {
-        // Tentar outros locais possíveis
-        accountId = webhookData.account_id || 
-                   webhookData.account?.id ||
-                   webhookData.meta?.account_id;
-      }
-      
-      if (accountId) {
-        console.log(`ID da conta extraído do payload: ${accountId}`);
-      } else {
-        console.error('ID da conta do Chatwoot não encontrado no payload nem nas configurações');
-        // Registrar o payload completo para diagnóstico
-        console.error('Payload do webhook:', JSON.stringify(webhookData, null, 2));
-        return {
-          status: 'erro',
-          motivo: 'ID da conta do Chatwoot não encontrado'
-        };
-      }
+      console.error('ID da conta do Chatwoot não encontrado no payload');
+      // Registrar o payload completo para diagnóstico
+      console.error('Payload do webhook:', JSON.stringify(webhookData, null, 2));
+      return {
+        status: 'erro',
+        motivo: 'ID da conta do Chatwoot não encontrado'
+      };
     }
     
     console.log(`Buscando mensagens da conversa ${conversationId} na conta ${accountId}`);
@@ -321,7 +340,8 @@ async function processWebhook(webhookData) {
       messagesByType,
       processedImages,
       processedFiles,
-      processedAudios
+      processedAudios,
+      accountId // Passar o ID da conta para uso nas chamadas à API do Chatwoot
     );
     
     return {

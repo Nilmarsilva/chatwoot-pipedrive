@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "start:new": "node src/index-new.js"
+    "start:new": "node src/index-new.js",
+    "start:safe": "node start.js"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",

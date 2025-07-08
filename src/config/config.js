@@ -1,7 +1,41 @@
 /**
  * Configurações centralizadas para a integração Chatwoot-Pipedrive
  */
-require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Verificar se o arquivo .env existe
+const envPath = path.resolve(process.cwd(), '.env');
+const envExists = fs.existsSync(envPath);
+
+console.log(`Verificando arquivo .env em: ${envPath}`);
+console.log(`Arquivo .env existe: ${envExists ? 'Sim' : 'Não'}`);
+
+if (envExists) {
+  try {
+    // Tentar ler o conteúdo do arquivo .env (sem mostrar valores sensíveis)
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    const envLines = envContent.split('\n').filter(line => line.trim() && !line.startsWith('#'));
+    console.log(`Arquivo .env contém ${envLines.length} variáveis definidas`);
+    
+    // Mostrar quais variáveis estão definidas (sem valores)
+    envLines.forEach(line => {
+      const varName = line.split('=')[0].trim();
+      console.log(`Variável encontrada: ${varName}`);
+    });
+  } catch (err) {
+    console.error(`Erro ao ler arquivo .env: ${err.message}`);
+  }
+}
+
+// Carregar variáveis de ambiente do arquivo .env
+const result = dotenv.config();
+if (result.error) {
+  console.error(`Erro ao carregar .env: ${result.error.message}`);
+} else {
+  console.log('.env carregado com sucesso');
+}
 
 // Log para verificar se as variáveis de ambiente estão sendo carregadas
 console.log('============= CONFIGURAÇÕES CARREGADAS =============');
@@ -15,7 +49,9 @@ console.log('====================================================');
 // Configurações do Chatwoot
 const chatwootConfig = {
   baseUrl: process.env.CHATWOOT_BASE_URL || 'https://app.chatwoot.com',
-  apiKey: process.env.CHATWOOT_API_KEY,
+  // Verificar tanto CHATWOOT_API_KEY quanto CHATWOOT_API_TOKEN (usado no .env)
+  apiKey: process.env.CHATWOOT_API_KEY || process.env.CHATWOOT_API_TOKEN,
+  // Se não estiver definido no .env, será extraído do payload do webhook
   accountId: process.env.CHATWOOT_ACCOUNT_ID,
   inboxId: process.env.CHATWOOT_INBOX_ID,
 };

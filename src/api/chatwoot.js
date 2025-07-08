@@ -142,9 +142,10 @@ async function getChatwootMessages(conversationId, accountId) {
  * Atualiza contato no Chatwoot com ID do Deal
  * @param {string} contactId - ID do contato
  * @param {string} dealId - ID do Deal
+ * @param {string} [accountId] - ID da conta (opcional, usará config se não fornecido)
  * @returns {Promise<void>}
  */
-async function updateChatwootContact(contactId, dealId) {
+async function updateChatwootContact(contactId, dealId, accountId) {
   try {
     // Verificar se o token de API está configurado
     if (!config.chatwoot.apiKey) {
@@ -152,17 +153,20 @@ async function updateChatwootContact(contactId, dealId) {
       throw new Error('Token de API do Chatwoot não configurado');
     }
     
-    // Verificar se o ID da conta está configurado
-    if (!config.chatwoot.accountId) {
-      console.error('[Chatwoot] ID da conta não configurado');
-      throw new Error('ID da conta do Chatwoot não configurado');
+    // Usar o ID da conta fornecido ou tentar usar o das configurações
+    const usedAccountId = accountId || config.chatwoot.accountId;
+    
+    // Verificar se temos um ID de conta válido
+    if (!usedAccountId) {
+      console.error('[Chatwoot] ID da conta não fornecido nem configurado');
+      throw new Error('ID da conta do Chatwoot não fornecido nem configurado');
     }
     
     const baseUrl = config.chatwoot.baseUrl.endsWith('/') 
       ? config.chatwoot.baseUrl 
       : `${config.chatwoot.baseUrl}/`;
     
-    const apiUrl = `${baseUrl}api/v1/accounts/${config.chatwoot.accountId}/contacts/${contactId}`;
+    const apiUrl = `${baseUrl}api/v1/accounts/${usedAccountId}/contacts/${contactId}`;
     console.log(`[Chatwoot] Atualizando contato: ${apiUrl}`);
     
     await axios.put(
