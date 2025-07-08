@@ -10,7 +10,10 @@
 function formatarData(timestamp) {
   if (!timestamp) return 'Data desconhecida';
   const date = new Date(timestamp * 1000); // timestamp do Chatwoot é em segundos
-  return date.toLocaleString('pt-BR');
+  // Garantir fuso horário de São Paulo
+  return date.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo'
+  });
 }
 
 /**
