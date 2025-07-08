@@ -287,14 +287,44 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
   try {
     // Verificar se é um arquivo de áudio (mp3, oga, ogg, wav)
     const audioExtensions = ['mp3', 'oga', 'ogg', 'wav', 'mp4', 'webm'];
-    const fileExt = fileName.split('.').pop().toLowerCase();
     
+    // Garantir que o nome do arquivo tenha uma extensão
+    let fileNameWithExt = fileName;
+    let fileExt = '';
+    
+    // Extrair a extensão do nome do arquivo
+    if (fileName.includes('.')) {
+      fileExt = fileName.split('.').pop().toLowerCase();
+    } else {
+      // Se não tiver extensão, tentar determinar pelo tipo MIME
+      if (fileType) {
+        const mimeToExt = {
+          'image/jpeg': 'jpg',
+          'image/jpg': 'jpg',
+          'image/png': 'png',
+          'image/gif': 'gif',
+          'application/pdf': 'pdf',
+          'text/plain': 'txt',
+          'application/msword': 'doc',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+          'application/vnd.ms-excel': 'xls',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx'
+        };
+        
+        const cleanMimeType = fileType.split(';')[0].trim();
+        fileExt = mimeToExt[cleanMimeType] || cleanMimeType.split('/').pop().replace(/[^a-z0-9]/g, '');
+        fileNameWithExt = `${fileName}.${fileExt}`;
+        console.log(`Adicionada extensão .${fileExt} ao nome do arquivo: ${fileNameWithExt}`);
+      }
+    }
+    
+    // Verificar se é um arquivo de áudio
     if (audioExtensions.includes(fileExt)) {
-      console.log(`Pulando anexo de arquivo de áudio ${fileName} - O Pipedrive não suporta anexos de áudio`);
+      console.log(`Pulando anexo de arquivo de áudio ${fileNameWithExt} - O Pipedrive não suporta anexos de áudio`);
       return null;
     }
     
-    console.log(`Anexando arquivo ${fileName} ao Deal ${dealId}`);
+    console.log(`Anexando arquivo ${fileNameWithExt} ao Deal ${dealId}`);
     
     // Criar FormData para upload
     const formData = new FormData();
@@ -349,7 +379,7 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
     
     // Adicionar o arquivo ao FormData
     formData.append('file', buffer, {
-      filename: fileName,
+      filename: fileNameWithExt,
       contentType: mimeType,
       knownLength: buffer.length
     });
@@ -359,7 +389,7 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
     
     // Log detalhado para debug
     console.log(`Anexando arquivo ao Pipedrive:`);
-    console.log(`- Nome: ${fileName}`);
+    console.log(`- Nome: ${fileNameWithExt}`);
     console.log(`- Tipo MIME: ${mimeType}`);
     console.log(`- Tamanho: ${buffer.length} bytes`);
     console.log(`- Deal ID: ${dealId}`);
@@ -412,7 +442,7 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
     // Verificar se o arquivo foi anexado com sucesso
     const fileData = response.data.data;
     if (fileData && fileData.id && fileData.active_flag) {
-      console.log(`✅ Arquivo anexado com sucesso: ${fileName}`);
+      console.log(`✅ Arquivo anexado com sucesso: ${fileNameWithExt}`);
       console.log(`   📌 ID: ${fileData.id}`);
       
       // Configurar URL para visualização direta quando possível
@@ -429,10 +459,12 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
       return {
         ...fileData,
         viewUrl: fileUrl,
-        mimeType: mimeType
+        mimeType: mimeType,
+        fileName: fileNameWithExt,  // Adicionar o nome do arquivo com extensão para uso posterior
+        extension: fileExt          // Adicionar a extensão para uso posterior
       };
     } else {
-      console.error(`❌ Falha ao anexar arquivo: ${fileName}`);
+      console.error(`❌ Falha ao anexar arquivo: ${fileNameWithExt}`);
       console.error(`   Resposta: ${JSON.stringify(fileData)}`);
       return null;
     }

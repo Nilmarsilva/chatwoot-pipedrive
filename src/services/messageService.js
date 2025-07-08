@@ -264,18 +264,31 @@ function formatNotaTexto(messages) {
     
     if (msg.type === 'audio') {
       tiposMensagens.audio++;
-      nota += `[${data}] ${remetente} (áudio): ${msg.file_name || 'Mensagem de voz'}
-`;
+      nota += `[${data}] ${remetente} (áudio): ${msg.file_name || 'Mensagem de voz'}`;
+      
       // Verificar transcrição em múltiplos locais possíveis
-      const transcricao = msg.transcricao || msg.transcript || (msg.content_attributes && msg.content_attributes.transcription);
+      let transcricao = msg.transcricao || msg.transcript || 
+                        (msg.content_attributes && msg.content_attributes.transcription) || 
+                        (msg.content_attributes && msg.content_attributes.transcript) || 
+                        (msg.content && msg.content.includes('Transcrição:') ? msg.content : null);
+      
+      // Verificar se a transcrição está em algum outro campo (para compatibilidade)
+      if (!transcricao && msg.content) {
+        try {
+          // Tentar extrair de um possível JSON no content
+          const contentObj = JSON.parse(msg.content);
+          transcricao = contentObj.transcricao || contentObj.transcript || contentObj.text;
+        } catch (e) {
+          // Não é JSON, ignorar
+        }
+      }
+      
       if (transcricao) {
-        nota += `    Transcrição: "${transcricao}"
-
-`;
-        console.log(`Transcrição de áudio incluída para mensagem ${msg.id}: ${transcricao.substring(0, 50)}...`);
+        nota += `\n    Transcrição: "${transcricao}"\n\n`;
+        console.log(`✅ Transcrição de áudio incluída para mensagem ${msg.id}: ${transcricao.substring(0, 50)}...`);
       } else {
-        console.log(`Nenhuma transcrição encontrada para áudio ${msg.id}`);
-        nota += '\n';
+        console.log(`⚠️ Nenhuma transcrição encontrada para áudio ${msg.id}`);
+        nota += ' [Sem transcrição disponível]\n\n';
       }
     } else if (msg.type === 'image') {
       tiposMensagens.imagem++;
