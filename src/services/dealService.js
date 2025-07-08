@@ -228,19 +228,38 @@ async function processWebhook(webhookData) {
     // Extrair dados do contato
     const contactData = require('./messageService').extractContactData(webhookData);
     
-    // Verificamos se já existe um Deal associado, mas continuamos o processamento
-    // para atualizar o deal com novas mensagens e anexos
-    if (contactData.id_pipedrive) {
-      console.log(`Contato já possui Deal associado: ${contactData.id_pipedrive}`);
+    // Verificar se há ID do deal no Pipedrive em qualquer um dos campos possíveis
+    // Alguns webhooks usam id_pipedrive, outros usam id_deal_pipedrive
+    const dealId = contactData.id_pipedrive || contactData.id_deal_pipedrive;
+    if (dealId) {
+      console.log(`Contato já possui Deal associado: ${dealId}`);
+      // Garantir que o ID esteja disponível em ambos os campos para consistência
+      contactData.id_pipedrive = dealId;
+      contactData.id_deal_pipedrive = dealId;
       // Não retornamos aqui, continuamos o processamento
     }
     
     // Buscar mensagens do Chatwoot
     const chatwootApi = require('../api/chatwoot');
-    const conversationId = webhookData.conversation?.id;
+    
+    // Buscar o ID da conversa em diferentes locais possíveis do payload
+    const conversationId = webhookData.conversation?.id || 
+                          webhookData.id || 
+                          webhookData.conversation_id || 
+                          (webhookData.meta?.conversation ? webhookData.meta.conversation.id : null);
+    
+    console.log('Tentando extrair ID da conversa:', {
+      'webhookData.conversation?.id': webhookData.conversation?.id,
+      'webhookData.id': webhookData.id,
+      'webhookData.conversation_id': webhookData.conversation_id,
+      'webhookData.meta?.conversation?.id': webhookData.meta?.conversation?.id,
+      'conversationId encontrado': conversationId
+    });
     
     if (!conversationId) {
       console.error('ID da conversa não encontrado no webhook');
+      // Registrar o payload completo para diagnóstico
+      console.error('Payload do webhook:', JSON.stringify(webhookData, null, 2));
       return {
         status: 'erro',
         motivo: 'ID da conversa não encontrado'

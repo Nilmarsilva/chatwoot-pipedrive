@@ -144,21 +144,37 @@ function extractContactData(webhookData) {
   const additionalAttributes = contact.additional_attributes || {};
   const webhookAttributes = webhookData.additional_attributes || {};
 
-  // Verificar múltiplas localizações possíveis para o id_deal_pipedrive
+  // Verificar múltiplas localizações possíveis para o ID do deal
   let id_pipedrive = '';
+  let id_deal_pipedrive = '';
   
   // Verificar em meta.sender.custom_attributes
   if (meta.sender?.custom_attributes?.id_deal_pipedrive) {
-    id_pipedrive = meta.sender.custom_attributes.id_deal_pipedrive;
+    id_deal_pipedrive = meta.sender.custom_attributes.id_deal_pipedrive;
+  } else if (meta.sender?.custom_attributes?.id_pipedrive) {
+    id_pipedrive = meta.sender.custom_attributes.id_pipedrive;
   }
+  
   // Verificar em meta.contact.custom_attributes
-  else if (meta.contact?.custom_attributes?.id_deal_pipedrive) {
-    id_pipedrive = meta.contact.custom_attributes.id_deal_pipedrive;
+  if (!id_deal_pipedrive && !id_pipedrive) {
+    if (meta.contact?.custom_attributes?.id_deal_pipedrive) {
+      id_deal_pipedrive = meta.contact.custom_attributes.id_deal_pipedrive;
+    } else if (meta.contact?.custom_attributes?.id_pipedrive) {
+      id_pipedrive = meta.contact.custom_attributes.id_pipedrive;
+    }
   }
+  
   // Verificar em additional_attributes do webhook
-  else if (webhookAttributes.id_deal_pipedrive) {
-    id_pipedrive = webhookAttributes.id_deal_pipedrive;
+  if (!id_deal_pipedrive && !id_pipedrive) {
+    if (webhookAttributes.id_deal_pipedrive) {
+      id_deal_pipedrive = webhookAttributes.id_deal_pipedrive;
+    } else if (webhookAttributes.id_pipedrive) {
+      id_pipedrive = webhookAttributes.id_pipedrive;
+    }
   }
+  
+  // Usar o primeiro ID encontrado, priorizando id_deal_pipedrive
+  const dealId = id_deal_pipedrive || id_pipedrive || '';
   
   // Extrair nome da empresa de múltiplas possíveis localizações
   const empresa = 
@@ -203,7 +219,8 @@ function extractContactData(webhookData) {
     empresa,
     processo,
     profissao,
-    id_pipedrive
+    id_pipedrive: dealId,
+    id_deal_pipedrive
   });
   
   return {
@@ -214,7 +231,8 @@ function extractContactData(webhookData) {
     empresa,
     processo,
     profissao,
-    id_pipedrive,
+    id_pipedrive: dealId,
+    id_deal_pipedrive: dealId,
     thumbnail: contact.thumbnail || ''
   };
 }
