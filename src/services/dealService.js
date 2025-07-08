@@ -161,13 +161,28 @@ async function createFullDeal(contactData, messagesByType, processedImages = [],
       for (const audio of processedAudios) {
         if (audio.processado && audio.base64) {
           try {
-            const fileName = audio.file_name || `audio_${audio.id}.mp3`;
-            const result = await attachFileToDeal(dealId, fileName, audio.base64, 'audio');
+            // Garantir que o nome do arquivo tenha extensão .mp3
+            let fileName = audio.file_name || `audio_${audio.id}.mp3`;
+            if (!fileName.toLowerCase().endsWith('.mp3')) {
+              fileName = `${fileName}.mp3`;
+            }
+            
+            // Anexar o áudio ao Deal com tipo MIME específico para áudio
+            const result = await attachFileToDeal(dealId, fileName, audio.base64, 'audio/mpeg');
+            
             if (result) {
+              // Se o áudio foi anexado com sucesso, criar uma nota adicional com a transcrição
+              if (audio.transcricao) {
+                const transcricaoNota = `🎤 Transcrição do áudio: ${fileName}\n\n"${audio.transcricao}"\n\n---\nGerado automaticamente via OpenAI`;
+                await createPipedriveNote(dealId, transcricaoNota);
+                console.log(`✅ Nota com transcrição do áudio ${fileName} criada com sucesso`);
+              }
+              
               anexos.push({
                 tipo: 'audio',
                 nome: fileName,
                 id: result.id,
+                url: result.viewUrl || result.url,
                 transcricao: audio.transcricao,
                 sucesso: true
               });

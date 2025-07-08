@@ -264,10 +264,17 @@ function formatNotaTexto(messages) {
     
     if (msg.type === 'audio') {
       tiposMensagens.audio++;
-      nota += `[${data}] ${remetente} (áudio): ${msg.file_name || 'Mensagem de voz'}\n`;
-      if (msg.transcricao) {
-        nota += `    Transcrição: "${msg.transcricao}"\n\n`;
+      nota += `[${data}] ${remetente} (áudio): ${msg.file_name || 'Mensagem de voz'}
+`;
+      // Verificar transcrição em múltiplos locais possíveis
+      const transcricao = msg.transcricao || msg.transcript || (msg.content_attributes && msg.content_attributes.transcription);
+      if (transcricao) {
+        nota += `    Transcrição: "${transcricao}"
+
+`;
+        console.log(`Transcrição de áudio incluída para mensagem ${msg.id}: ${transcricao.substring(0, 50)}...`);
       } else {
+        console.log(`Nenhuma transcrição encontrada para áudio ${msg.id}`);
         nota += '\n';
       }
     } else if (msg.type === 'image') {

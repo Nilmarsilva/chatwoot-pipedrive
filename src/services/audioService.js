@@ -215,14 +215,28 @@ async function processAudios(audios) {
         console.log(`Transcrevendo áudio: ${mp3File}`);
         const transcricao = await transcribeAudio(mp3File);
         
-        processedAudios.push({
+        // Garantir que a transcrição seja armazenada em múltiplos locais para compatibilidade
+        const audioProcessado = {
           ...audio,
           base64: base64Data,
           transcricao: transcricao || '[Transcrição indisponível]',
+          transcript: transcricao || '[Transcrição indisponível]',  // Campo alternativo para compatibilidade
           processado: true,
           tamanho: fileData.data.length,
-          contentType: fileData.contentType
-        });
+          contentType: fileData.contentType,
+          file_type: 'audio/mpeg'  // Garantir que o tipo de arquivo seja reconhecido
+        };
+        
+        // Adicionar transcrição aos content_attributes para compatibilidade com diferentes formatos
+        if (!audioProcessado.content_attributes) {
+          audioProcessado.content_attributes = {};
+        }
+        audioProcessado.content_attributes.transcription = transcricao || '[Transcrição indisponível]';
+        
+        // Adicionar ao array de áudios processados
+        processedAudios.push(audioProcessado);
+        
+        console.log(`Áudio ${audio.id} processado com sucesso. Transcrição: ${(transcricao || '').substring(0, 50)}...`);
         
       } catch (processError) {
         console.error(`Erro ao processar áudio ${audio.id}:`, processError);

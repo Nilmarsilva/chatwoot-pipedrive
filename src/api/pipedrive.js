@@ -300,11 +300,15 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
     const base64Data = matches[2];
     const buffer = Buffer.from(base64Data, 'base64');
     
-    // Adicionar o arquivo ao FormData
+    // Adicionar o arquivo ao FormData com configurações adequadas para visualização no navegador
     formData.append('file', buffer, {
       filename: fileName,
-      contentType: mimeType
+      contentType: mimeType,
+      knownLength: buffer.length
     });
+    
+    // Adicionar campo para indicar que o arquivo deve ser visualizável no navegador
+    formData.append('inline_image', '1');
     
     // Adicionar o deal_id
     formData.append('deal_id', dealId);
@@ -326,8 +330,23 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
     if (fileData && fileData.id && fileData.active_flag) {
       console.log(`✅ Arquivo anexado com sucesso: ${fileName}`);
       console.log(`   📌 ID: ${fileData.id}`);
-      console.log(`   🔗 URL: ${fileData.url || fileData.download_url || `${config.pipedrive.baseUrl}/files/${fileData.id}/download`}`);
-      return fileData;
+      
+      // Configurar URL para visualização direta quando possível
+      let fileUrl = fileData.url || fileData.download_url || `${config.pipedrive.baseUrl}/files/${fileData.id}`;
+      
+      // Para imagens e PDFs, tentar usar a URL de visualização direta
+      if (mimeType.startsWith('image/') || mimeType === 'application/pdf') {
+        fileUrl = fileData.url || `${config.pipedrive.baseUrl}/files/${fileData.id}/inline`;
+      }
+      
+      console.log(`   🔗 URL: ${fileUrl}`);
+      
+      // Adicionar metadados adicionais ao retorno para uso posterior
+      return {
+        ...fileData,
+        viewUrl: fileUrl,
+        mimeType: mimeType
+      };
     } else {
       console.error(`❌ Falha ao anexar arquivo: ${fileName}`);
       console.error(`   Resposta: ${JSON.stringify(fileData)}`);
