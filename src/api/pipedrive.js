@@ -276,41 +276,49 @@ async function createPipedriveNote(dealId, content) {
 }
 
 /**
- * Anexar arquivo ao Deal no Pipedrive
+ * Anexa um arquivo a um Deal no Pipedrive
  * @param {string} dealId - ID do Deal
  * @param {string} fileName - Nome do arquivo
  * @param {string} fileContent - Conteúdo do arquivo em base64
- * @param {string} fileType - Tipo do arquivo
- * @returns {Object|null} Arquivo anexado ou null em caso de erro
+ * @param {string} fileType - Tipo do arquivo (opcional)
+ * @returns {Promise<Object>} - Dados do arquivo anexado
  */
 async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
   try {
+    // Verificar se é um arquivo de áudio (mp3, oga, ogg, wav)
+    const audioExtensions = ['mp3', 'oga', 'ogg', 'wav', 'mp4', 'webm'];
+    const fileExt = fileName.split('.').pop().toLowerCase();
+    
+    if (audioExtensions.includes(fileExt)) {
+      console.log(`Pulando anexo de arquivo de áudio ${fileName} - O Pipedrive não suporta anexos de áudio`);
+      return null;
+    }
+    
     console.log(`Anexando arquivo ${fileName} ao Deal ${dealId}`);
     
     // Criar FormData para upload
     const formData = new FormData();
     
-    let buffer, mimeType;
-    
     // Verificar se o conteúdo já está no formato data:mime;base64
-    const dataUrlRegex = /^data:(.+);base64,(.+)$/;
-    const matches = fileContent.match(dataUrlRegex);
+    let mimeType = fileType || 'application/octet-stream';
+    let buffer;
     
-    if (matches && matches.length === 3) {
-      // Se estiver no formato correto, extrair tipo MIME e dados
-      console.log(`Arquivo ${fileName} já está no formato data:mime;base64`);
+    console.log(`Arquivo ${fileName} ${fileContent.startsWith('data:') ? 'já está no formato data:mime;base64' : 'não está no formato data:mime;base64'}`);
+    
+    if (fileContent.startsWith('data:')) {
+      // Extrair o tipo MIME e os dados do base64
+      const matches = fileContent.match(/^data:(.+);base64,(.+)$/);
+      if (!matches || matches.length !== 3) {
+        throw new Error('Formato de base64 inválido');
+      }
+      
       mimeType = matches[1];
       const base64Data = matches[2];
       buffer = Buffer.from(base64Data, 'base64');
+      console.log(`Extraiu conteúdo base64 com tipo MIME ${mimeType}: ${buffer.length} bytes`);
     } else {
-      // Se não estiver no formato correto, tentar converter
-      console.log(`Arquivo ${fileName} não está no formato data:mime;base64, tentando converter`);
-      
-      // Determinar o tipo MIME com base no fileType fornecido ou na extensão do arquivo
-      if (fileType) {
-        mimeType = fileType;
-      } else {
-        // Tentar determinar o tipo MIME pela extensão do arquivo
+      // Tentar detectar o tipo MIME pela extensão do arquivo
+      if (fileName && !fileType) {
         const ext = fileName.split('.').pop().toLowerCase();
         const mimeTypes = {
           'jpg': 'image/jpeg',
@@ -318,12 +326,6 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
           'png': 'image/png',
           'gif': 'image/gif',
           'pdf': 'application/pdf',
-          'mp3': 'audio/mpeg',
-          'mp4': 'video/mp4',
-          'oga': 'audio/ogg',
-          'ogg': 'audio/ogg',
-          'wav': 'audio/wav',
-          'webm': 'video/webm',
           'txt': 'text/plain',
           'doc': 'application/msword',
           'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -345,17 +347,12 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
       }
     }
     
-    console.log(`Anexando arquivo ${fileName} (${mimeType}) com tamanho ${buffer.length} bytes`);
-    
-    // Adicionar o arquivo ao FormData com configurações adequadas para visualização no navegador
+    // Adicionar o arquivo ao FormData
     formData.append('file', buffer, {
       filename: fileName,
       contentType: mimeType,
       knownLength: buffer.length
     });
-    
-    // Adicionar campo para indicar que o arquivo deve ser visualizável no navegador
-    formData.append('inline_image', '1');
     
     // Adicionar o deal_id
     formData.append('deal_id', dealId);
@@ -387,8 +384,7 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
           {
             params: { api_token: config.pipedrive.apiToken },
             headers: {
-              ...formData.getHeaders(),
-              'Content-Type': 'multipart/form-data'
+              ...formData.getHeaders()
             },
             maxContentLength: Infinity,
             maxBodyLength: Infinity
