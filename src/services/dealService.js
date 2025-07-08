@@ -25,40 +25,66 @@ const { logToFile } = require('../utils/fileUtils');
  */
 async function createFullDeal(contactData, messagesByType, processedImages = [], processedFiles = [], processedAudios = []) {
   try {
-    console.log('Iniciando criação de Deal completo no Pipedrive');
+    console.log('Iniciando criação ou atualização de Deal no Pipedrive');
     
-    // Se já existe um ID de deal, não criar novo
+    let dealId;
+    let dealExistente = false;
+    
+    // Se já existe um ID de deal, usar o existente
     if (contactData.id_pipedrive) {
       console.log(`Deal já existe com ID: ${contactData.id_pipedrive}`);
-      return { id: contactData.id_pipedrive, existente: true };
-    }
-    
-    // 1. Criar Deal
-    console.log('Criando Deal no Pipedrive');
-    const deal = await createDeal(contactData);
-    const dealId = deal.id;
-    console.log(`Deal criado com ID: ${dealId}`);
-    
-    // 2. Criar Pessoa
-    console.log('Criando Pessoa no Pipedrive');
-    const person = await createPerson(contactData);
-    const personId = person.id;
-    console.log(`Pessoa criada com ID: ${personId}`);
-    
-    // 3. Criar ou buscar Organização se tiver empresa
-    let organizationId = null;
-    if (contactData.empresa) {
-      console.log(`Processando organização: ${contactData.empresa}`);
-      const organization = await createOrganization(contactData);
-      if (organization) {
-        organizationId = organization.id;
-        console.log(`Organização definida com ID: ${organizationId}`);
+      dealId = contactData.id_pipedrive;
+      dealExistente = true;
+    } else {
+      // 1. Criar Deal
+      console.log('Criando novo Deal no Pipedrive');
+      const deal = await createDeal(contactData);
+      dealId = deal.id;
+      console.log(`Deal criado com ID: ${dealId}`);
+      
+      // 2. Criar Pessoa
+      console.log('Criando Pessoa no Pipedrive');
+      const person = await createPerson(contactData);
+      const personId = person.id;
+      console.log(`Pessoa criada com ID: ${personId}`);
+      
+      // 3. Criar ou buscar Organização se tiver empresa
+      let organizationId = null;
+      if (contactData.empresa) {
+        console.log(`Buscando organização para: ${contactData.empresa}`);
+        const orgResult = await findOrganization(contactData.empresa);
+        
+        if (orgResult && orgResult.id) {
+          organizationId = orgResult.id;
+          console.log(`Organização encontrada com ID: ${organizationId}`);
+        } else {
+          console.log(`Criando nova organização: ${contactData.empresa}`);
+          const newOrg = await createOrganization(contactData.empresa);
+          organizationId = newOrg.id;
+          console.log(`Organização criada com ID: ${organizationId}`);
+        }
+      }
+      
+      // 4. Atualizar relações do Deal (pessoa e organização)
+      console.log('Atualizando relações do Deal');
+      await updateDealRelations(dealId, personId, organizationId);
+      console.log('Relações do Deal atualizadas com sucesso');
+      
+      // 5. Atualizar contato no Chatwoot com o ID do deal
+      try {
+        console.log(`Atualizando contato ${contactData.id} no Chatwoot com Deal ID: ${dealId}`);
+        await updateChatwootContact(contactData.id, { id_deal_pipedrive: dealId });
+        console.log('Contato atualizado com sucesso no Chatwoot');
+      } catch (chatwootError) {
+        console.error('Erro ao atualizar contato no Chatwoot:', chatwootError);
       }
     }
     
-    // 4. Atualizar Deal com relações (pessoa e organização)
-    console.log('Atualizando Deal com relações');
-    await updateDealRelations(dealId, personId, organizationId);
+    // 4. Atualizar Deal com relações (pessoa e organização) - apenas para novos deals
+    if (!dealExistente) {
+      console.log('Atualizando Deal com relações');
+      await updateDealRelations(dealId, personId, organizationId);
+    }
     
     // 5. Criar nota com histórico da conversa
     console.log('Criando nota com histórico da conversa');
@@ -172,13 +198,13 @@ async function createFullDeal(contactData, messagesByType, processedImages = [],
       }
     }
     
-    // Retornar informações do Deal criado
+    // Retornar informações do Deal criado ou atualizado
     return {
       id: dealId,
-      personId,
-      organizationId,
+      personId: dealExistente ? undefined : personId,
+      organizationId: dealExistente ? undefined : organizationId,
       anexos,
-      existente: false
+      existente: dealExistente
     };
     
   } catch (error) {
@@ -202,14 +228,11 @@ async function processWebhook(webhookData) {
     // Extrair dados do contato
     const contactData = require('./messageService').extractContactData(webhookData);
     
-    // Verificar se já existe um Deal associado
+    // Verificamos se já existe um Deal associado, mas continuamos o processamento
+    // para atualizar o deal com novas mensagens e anexos
     if (contactData.id_pipedrive) {
       console.log(`Contato já possui Deal associado: ${contactData.id_pipedrive}`);
-      return {
-        status: 'existente',
-        dealId: contactData.id_pipedrive,
-        contactData
-      };
+      // Não retornamos aqui, continuamos o processamento
     }
     
     // Buscar mensagens do Chatwoot
