@@ -69,6 +69,13 @@ const openaiConfig = {
   apiKey: process.env.OPENAI_API_KEY || '',
 };
 
+// Verificar se a chave da API OpenAI está configurada
+if (process.env.OPENAI_API_KEY) {
+  console.log(`OpenAI API Key encontrada: ${process.env.OPENAI_API_KEY.substring(0, 5)}...${process.env.OPENAI_API_KEY.substring(process.env.OPENAI_API_KEY.length - 4)}`);
+} else {
+  console.warn('AVISO: OPENAI_API_KEY não está configurada no arquivo .env. A transcrição de áudio não funcionará.');
+}
+
 // Configurações do servidor
 const serverConfig = {
   port: process.env.PORT || 3000,

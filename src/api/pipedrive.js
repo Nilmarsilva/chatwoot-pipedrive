@@ -290,15 +290,62 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
     // Criar FormData para upload
     const formData = new FormData();
     
-    // Extrair o tipo MIME e os dados do base64
-    const matches = fileContent.match(/^data:(.+);base64,(.+)$/);
-    if (!matches || matches.length !== 3) {
-      throw new Error('Formato de base64 inválido');
+    let buffer, mimeType;
+    
+    // Verificar se o conteúdo já está no formato data:mime;base64
+    const dataUrlRegex = /^data:(.+);base64,(.+)$/;
+    const matches = fileContent.match(dataUrlRegex);
+    
+    if (matches && matches.length === 3) {
+      // Se estiver no formato correto, extrair tipo MIME e dados
+      console.log(`Arquivo ${fileName} já está no formato data:mime;base64`);
+      mimeType = matches[1];
+      const base64Data = matches[2];
+      buffer = Buffer.from(base64Data, 'base64');
+    } else {
+      // Se não estiver no formato correto, tentar converter
+      console.log(`Arquivo ${fileName} não está no formato data:mime;base64, tentando converter`);
+      
+      // Determinar o tipo MIME com base no fileType fornecido ou na extensão do arquivo
+      if (fileType) {
+        mimeType = fileType;
+      } else {
+        // Tentar determinar o tipo MIME pela extensão do arquivo
+        const ext = fileName.split('.').pop().toLowerCase();
+        const mimeTypes = {
+          'jpg': 'image/jpeg',
+          'jpeg': 'image/jpeg',
+          'png': 'image/png',
+          'gif': 'image/gif',
+          'pdf': 'application/pdf',
+          'mp3': 'audio/mpeg',
+          'mp4': 'video/mp4',
+          'oga': 'audio/ogg',
+          'ogg': 'audio/ogg',
+          'wav': 'audio/wav',
+          'webm': 'video/webm',
+          'txt': 'text/plain',
+          'doc': 'application/msword',
+          'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'xls': 'application/vnd.ms-excel',
+          'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'ppt': 'application/vnd.ms-powerpoint',
+          'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        };
+        mimeType = mimeTypes[ext] || 'application/octet-stream';
+      }
+      
+      // Verificar se o conteúdo é uma string base64 sem o prefixo data:mime
+      try {
+        buffer = Buffer.from(fileContent, 'base64');
+        console.log(`Convertido conteúdo base64 para buffer: ${buffer.length} bytes`);
+      } catch (error) {
+        console.error(`Erro ao converter conteúdo para buffer: ${error.message}`);
+        throw new Error(`Formato de arquivo inválido para ${fileName}`);
+      }
     }
     
-    const mimeType = matches[1];
-    const base64Data = matches[2];
-    const buffer = Buffer.from(base64Data, 'base64');
+    console.log(`Anexando arquivo ${fileName} (${mimeType}) com tamanho ${buffer.length} bytes`);
     
     // Adicionar o arquivo ao FormData com configurações adequadas para visualização no navegador
     formData.append('file', buffer, {
@@ -313,17 +360,58 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
     // Adicionar o deal_id
     formData.append('deal_id', dealId);
     
-    // Fazer a requisição para a API do Pipedrive
-    const response = await axios.post(
-      `${config.pipedrive.baseUrl}/files`,
-      formData,
-      {
-        params: { api_token: config.pipedrive.apiToken },
-        headers: {
-          ...formData.getHeaders()
+    // Log detalhado para debug
+    console.log(`Anexando arquivo ao Pipedrive:`);
+    console.log(`- Nome: ${fileName}`);
+    console.log(`- Tipo MIME: ${mimeType}`);
+    console.log(`- Tamanho: ${buffer.length} bytes`);
+    console.log(`- Deal ID: ${dealId}`);
+    console.log(`- URL: ${config.pipedrive.baseUrl}/files`);
+    
+    // Verificar se o token da API do Pipedrive está configurado
+    if (!config.pipedrive.apiToken) {
+      console.error('PIPEDRIVE_API_TOKEN não está configurado no .env');
+      throw new Error('Token da API do Pipedrive não configurado');
+    }
+    
+    // Fazer a requisição para a API do Pipedrive com retry
+    let response;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        response = await axios.post(
+          `${config.pipedrive.baseUrl}/files`,
+          formData,
+          {
+            params: { api_token: config.pipedrive.apiToken },
+            headers: {
+              ...formData.getHeaders(),
+              'Content-Type': 'multipart/form-data'
+            },
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity
+          }
+        );
+        break; // Se a requisição for bem-sucedida, sair do loop
+      } catch (error) {
+        retryCount++;
+        console.error(`Tentativa ${retryCount}/${maxRetries} falhou: ${error.message}`);
+        
+        if (error.response) {
+          console.error(`Status: ${error.response.status}`);
+          console.error(`Resposta: ${JSON.stringify(error.response.data)}`);
         }
+        
+        if (retryCount >= maxRetries) {
+          throw error; // Re-lançar o erro após todas as tentativas
+        }
+        
+        // Esperar antes de tentar novamente (backoff exponencial)
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)));
       }
-    );
+    }
     
     // Verificar se o arquivo foi anexado com sucesso
     const fileData = response.data.data;

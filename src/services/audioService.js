@@ -9,8 +9,17 @@ const { downloadFile } = require('./fileService');
 const { convertToBase64, logToFile } = require('../utils/fileUtils');
 const config = require('../config/config');
 
-// Inicializar cliente OpenAI se a chave estiver disponível
-const openai = config.OPENAI_API_KEY ? new OpenAI({ apiKey: config.OPENAI_API_KEY }) : null;
+// Inicializar cliente OpenAI diretamente com a variável de ambiente
+const openaiApiKey = process.env.OPENAI_API_KEY || (config.openai && config.openai.apiKey);
+const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
+
+// Log para debug da chave da API
+console.log(`OpenAI API Key configurada: ${openaiApiKey ? 'Sim' : 'Não'}`);
+if (openaiApiKey) {
+  console.log(`OpenAI API Key: ${openaiApiKey.substring(0, 5)}...${openaiApiKey.substring(openaiApiKey.length - 4)}`);
+} else {
+  console.error('AVISO: OPENAI_API_KEY não está configurada no arquivo .env. A transcrição de áudio não funcionará.');
+}
 
 /**
  * Converte buffer de áudio para arquivo temporário
@@ -76,100 +85,91 @@ async function convertAudioToMp3(inputFile) {
 }
 
 /**
- * Transcreve áudio usando a API da OpenAI
- * @param {string} audioFilePath - Caminho do arquivo de áudio
+ * Transcreve um arquivo de áudio usando a API da OpenAI
+ * @param {string} audioFilePath - Caminho para o arquivo de áudio
  * @returns {Promise<string>} Texto transcrito
  */
 async function transcribeAudio(audioFilePath) {
+  // Verificar se o cliente OpenAI foi inicializado corretamente
+  if (!openai) {
+    console.warn('OPENAI_API_KEY não configurada no .env, pulando transcrição');
+    console.warn('Para habilitar a transcrição de áudio, adicione OPENAI_API_KEY=sua_chave_aqui ao arquivo .env');
+    return '[Transcrição indisponível: Chave da API não configurada]';
+  }
+  
+  // Verificar se o arquivo existe
+  if (!fs.existsSync(audioFilePath)) {
+    console.error(`Arquivo de áudio não encontrado: ${audioFilePath}`);
+    return '[Transcrição indisponível: Arquivo não encontrado]';
+  }
+  
+  console.log(`Iniciando transcrição do áudio: ${audioFilePath}`);
+  
+  // Verifica se o arquivo existe e tem tamanho maior que zero
+  const stats = await fs.promises.stat(audioFilePath);
+  if (stats.size === 0) {
+    console.warn('Arquivo de áudio vazio:', audioFilePath);
+    return '[Transcrição indisponível: Arquivo de áudio vazio]';
+  }
+  
+  console.log(`Tamanho do arquivo de áudio: ${(stats.size / 1024).toFixed(2)} KB`);
+  
+  // Não configuramos timeout para garantir que a transcrição seja concluída
+  // independentemente do tempo que leve
+  console.log('Iniciando transcrição sem limite de tempo...');
+  
   try {
-    if (!config.OPENAI_API_KEY) {
-      console.warn('OPENAI_API_KEY não configurada, pulando transcrição');
-      return '[Transcrição indisponível: Chave da API não configurada]';
+    const transcription = await openai.audio.transcriptions.create(
+      {
+        file: fs.createReadStream(audioFilePath),
+        model: 'whisper-1',
+        language: 'pt', // Idioma português
+        response_format: 'text',
+      },
+      {
+        // Sem signal para timeout
+        maxBodyLength: 1024 * 1024 * 50, // 50MB para arquivos maiores
+        // Sem timeout para permitir transcrições longas
+      }
+    );
+    
+    
+    if (!transcription) {
+      console.warn('Transcrição retornou vazia');
+      return '[Transcrição indisponível: Resposta vazia da API]';
     }
     
-    console.log(`Iniciando transcrição do áudio: ${audioFilePath}`);
+    console.log('Transcrição concluída com sucesso');
+    return transcription.toString().trim();
     
-    // Verifica se o arquivo existe e tem tamanho maior que zero
-    const stats = await fs.promises.stat(audioFilePath);
-    if (stats.size === 0) {
-      console.warn('Arquivo de áudio vazio:', audioFilePath);
-      return '[Transcrição indisponível: Arquivo de áudio vazio]';
+  } catch (apiError) {
+    // Tratamento de erro na transcrição (sem timeout)
+    
+    if (apiError.response) {
+      // Erro da API da OpenAI
+      console.error('Erro na API da OpenAI:', {
+        status: apiError.response.status,
+        statusText: apiError.response.statusText,
+        data: apiError.response.data
+      });
+    } else if (apiError.request) {
+      // Erro de requisição (sem resposta)
+      console.error('Erro na requisição para a API da OpenAI:', {
+        message: apiError.message,
+        code: apiError.code
+      });
+    } else {
+      // Outros erros
+      console.error('Erro ao configurar a requisição para a API da OpenAI:', apiError.message);
     }
     
-    console.log(`Tamanho do arquivo de áudio: ${(stats.size / 1024).toFixed(2)} KB`);
-    
-    // Configura o tempo limite para a requisição (30 segundos)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    
-    try {
-      const transcription = await openai.audio.transcriptions.create(
-        {
-          file: fs.createReadStream(audioFilePath),
-          model: 'whisper-1',
-          language: 'pt', // Idioma português
-          response_format: 'text',
-        },
-        {
-          signal: controller.signal,
-          maxBodyLength: 1024 * 1024 * 10, // 10MB
-          timeout: 30000 // 30 segundos
-        }
-      );
-      
-      clearTimeout(timeoutId);
-      
-      if (!transcription) {
-        console.warn('Transcrição retornou vazia');
-        return '[Transcrição indisponível: Resposta vazia da API]';
-      }
-      
-      console.log('Transcrição concluída com sucesso');
-      return transcription.toString().trim();
-      
-    } catch (apiError) {
-      clearTimeout(timeoutId);
-      
-      if (apiError.name === 'AbortError') {
-        console.error('Tempo limite excedido ao transcrever áudio');
-        return '[Transcrição indisponível: Tempo limite excedido]';
-      }
-      
-      if (apiError.response) {
-        // Erro da API da OpenAI
-        console.error('Erro na API da OpenAI:', {
-          status: apiError.response.status,
-          statusText: apiError.response.statusText,
-          data: apiError.response.data
-        });
-      } else if (apiError.request) {
-        // Erro de requisição (sem resposta)
-        console.error('Erro na requisição para a API da OpenAI:', {
-          message: apiError.message,
-          code: apiError.code
-        });
-      } else {
-        // Outros erros
-        console.error('Erro ao configurar a requisição para a API da OpenAI:', apiError.message);
-      }
-      
-      return `[Erro na transcrição: ${apiError.message || 'Erro desconhecido'}]`;
-    }
-    
-  } catch (error) {
-    console.error('Erro ao transcrever áudio:', {
-      message: error.message,
-      stack: error.stack,
-      filePath: audioFilePath,
-      fileExists: fs.existsSync(audioFilePath)
-    });
-    
+    // Log do erro para arquivo
     logToFile('Erro na transcrição de áudio', {
       filePath: audioFilePath,
-      error: error.message
+      error: apiError.message
     });
     
-    return `[Erro na transcrição: ${error.message || 'Erro desconhecido'}]`;
+    return `[Erro na transcrição: ${apiError.message || 'Erro desconhecido'}]`;
   }
 }
 
