@@ -36,10 +36,20 @@ if (!fs.existsSync(logsDir)) {
 
 // Rota de status/health check
 app.get('/', (req, res) => {
+  console.log(`Health check solicitado: ${new Date().toISOString()}`);
   res.json({
     status: 'online',
     versao: '2.0.0',
     nome: 'Integração Chatwoot-Pipedrive',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Rota adicional para health check do Docker
+app.get('/health', (req, res) => {
+  console.log(`Health check Docker solicitado: ${new Date().toISOString()}`);
+  res.json({
+    status: 'online',
     timestamp: new Date().toISOString()
   });
 });
