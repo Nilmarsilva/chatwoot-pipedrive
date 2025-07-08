@@ -94,7 +94,7 @@ services:
           memory: 512M
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.chatwoot-pipedrive.rule=Host(`webhookdata.authbrasil.app.br`)"
+        - "traefik.http.routers.chatwoot-pipedrive.rule=Host(`app.atendimentorapido.app.br`)"
         - "traefik.http.routers.chatwoot-pipedrive.entrypoints=websecure"
         - "traefik.http.routers.chatwoot-pipedrive.tls.certresolver=letsencryptresolver"
         - "traefik.http.services.chatwoot-pipedrive.loadbalancer.server.port=3000"
