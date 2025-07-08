@@ -40,7 +40,8 @@ services:
         rm -rf /tmp/repo; \
       fi && \
       echo "Instalando dependências do Node.js..." && \
-      npm install --omit=optional --no-audit --no-fund && \
+      npm install --omit=dev --no-audit --no-fund && \
+      npm install cors express dotenv && \
       echo "Iniciando aplicação..." && \
       npm run start'
     
