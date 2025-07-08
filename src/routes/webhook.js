@@ -64,7 +64,11 @@ router.post('/', async (req, res) => {
     
     
     // Verificar se a conversa está fechada
-    const isClosed = webhookData.conversation?.status === 'resolved';
+    // O status pode estar em diferentes locais dependendo do tipo de evento
+    const conversationStatus = webhookData.status || webhookData.conversation?.status;
+    console.log(`Status da conversa identificado: ${conversationStatus}`);
+    
+    const isClosed = conversationStatus === 'resolved';
     
     // Se a conversa não estiver fechada, apenas registra e retorna sucesso
     if (!isClosed) {
