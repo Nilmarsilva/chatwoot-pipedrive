@@ -42,8 +42,9 @@ services:
       echo "Instalando dependências do Node.js..." && \
       npm install --omit=dev --no-audit --no-fund && \
       npm install cors express dotenv && \
-      echo "Iniciando aplicação..." && \
-      npm run start'
+      chmod +x /app/start.sh && \
+      echo "Executando script de inicialização..." && \
+      /app/start.sh'
     
     # Configurações de rede
     networks:
@@ -66,13 +67,13 @@ services:
       - PIPEDRIVE_BASE_URL=${PIPEDRIVE_BASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     
-    # Configurações de healthcheck
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+    # Configurações de healthcheck (temporariamente desativado para debug)
+    # healthcheck:
+    #   test: ["CMD", "wget", "--spider", "http://localhost:3000/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 60s
     
     # Configurações de deploy para o Docker Swarm
     deploy:

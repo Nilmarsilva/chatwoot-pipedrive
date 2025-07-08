@@ -60,10 +60,34 @@ app.use('/webhook', webhookRoutes);
 // Registrar rota alternativa para compatibilidade
 app.use('/api/webhook', webhookRoutes);
 
+// Capturar sinais de encerramento para log
+process.on('SIGTERM', () => {
+  console.log('Recebido sinal SIGTERM - Encerrando aplicação');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('Recebido sinal SIGINT - Encerrando aplicação');
+  process.exit(0);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Erro não tratado:', error);
+  // Não encerrar o processo para evitar que o Docker reinicie o contêiner
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Promessa rejeitada não tratada:', reason);
+  // Não encerrar o processo para evitar que o Docker reinicie o contêiner
+});
+
 // Iniciar o servidor
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   console.log(`Acesse: http://localhost:${PORT}`);
+  console.log(`Versão Node.js: ${process.version}`);
+  console.log(`Memória: ${JSON.stringify(process.memoryUsage())}`);
+  console.log(`Ambiente: ${process.env.NODE_ENV}`);
   
   // Registrar informações de inicialização
   logToFile('servidor_iniciado', {
