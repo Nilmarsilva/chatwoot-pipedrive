@@ -272,6 +272,15 @@ function formatNotaTexto(messages) {
                         (msg.content_attributes && msg.content_attributes.transcript) || 
                         (msg.content && msg.content.includes('Transcrição:') ? msg.content : null);
       
+      // Log para debug dos campos disponíveis no objeto de áudio
+      console.log(`DEBUG - Objeto de áudio ${msg.id || 'desconhecido'}:`, {
+        transcricao: msg.transcricao,
+        transcript: msg.transcript,
+        content_attributes: msg.content_attributes,
+        content: msg.content && msg.content.substring(0, 50) + '...',
+        keys: Object.keys(msg)
+      });
+      
       // Verificar se a transcrição está em algum outro campo (para compatibilidade)
       if (!transcricao && msg.content) {
         try {
@@ -285,10 +294,25 @@ function formatNotaTexto(messages) {
       
       if (transcricao) {
         nota += `\n    Transcrição: "${transcricao}"\n\n`;
-        console.log(`✅ Transcrição de áudio incluída para mensagem ${msg.id}: ${transcricao.substring(0, 50)}...`);
+        console.log(`✅ Transcrição de áudio incluída para mensagem ${msg.id || 'desconhecido'}: ${transcricao.substring(0, 50)}...`);
       } else {
-        console.log(`⚠️ Nenhuma transcrição encontrada para áudio ${msg.id}`);
-        nota += ' [Sem transcrição disponível]\n\n';
+        // Tentativa adicional de encontrar a transcrição em qualquer campo do objeto
+        const allKeys = Object.keys(msg);
+        for (const key of allKeys) {
+          if (typeof msg[key] === 'string' && 
+              (key.includes('transcr') || key.includes('text')) && 
+              msg[key].length > 10) {
+            transcricao = msg[key];
+            nota += `\n    Transcrição: "${transcricao}"\n\n`;
+            console.log(`✅ Transcrição encontrada no campo ${key}: ${transcricao.substring(0, 50)}...`);
+            break;
+          }
+        }
+        
+        if (!transcricao) {
+          console.log(`⚠️ Nenhuma transcrição encontrada para áudio ${msg.id || 'desconhecido'}`);
+          nota += ' [Sem transcrição disponível]\n\n';
+        }
       }
     } else if (msg.type === 'image') {
       tiposMensagens.imagem++;
@@ -343,10 +367,41 @@ function combineMessages(messagesByType) {
   
   // Adicionar áudios
   messagesByType.audio.forEach(msg => {
-    combinedMessages.push({
-      ...msg,
-      type: 'audio'
+    // Log para debug do objeto de áudio antes de combinar
+    console.log(`DEBUG - Objeto de áudio antes de combinar:`, {
+      id: msg.id,
+      transcricao: msg.transcricao,
+      transcript: msg.transcript,
+      content_attributes: msg.content_attributes,
+      keys: Object.keys(msg)
     });
+    
+    // Garantir que a transcrição seja passada corretamente
+    const audioMsg = {
+      ...msg,
+      type: 'audio',
+      // Garantir que a transcrição esteja disponível em múltiplos campos para compatibilidade
+      transcricao: msg.transcricao || msg.transcript || 
+                  (msg.content_attributes && msg.content_attributes.transcription) || 
+                  (msg.content_attributes && msg.content_attributes.transcript)
+    };
+    
+    // Se ainda não encontrou transcrição, procurar em qualquer campo
+    if (!audioMsg.transcricao) {
+      const allKeys = Object.keys(msg);
+      for (const key of allKeys) {
+        if (typeof msg[key] === 'string' && 
+            (key.includes('transcr') || key.includes('text')) && 
+            msg[key].length > 10) {
+          audioMsg.transcricao = msg[key];
+          console.log(`Transcrição encontrada no campo ${key}: ${msg[key].substring(0, 50)}...`);
+          break;
+        }
+      }
+    }
+    
+    // Adicionar o objeto de áudio com transcrição garantida
+    combinedMessages.push(audioMsg);
   });
   
   // Adicionar arquivos

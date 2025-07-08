@@ -224,7 +224,8 @@ async function processAudios(audios) {
           processado: true,
           tamanho: fileData.data.length,
           contentType: fileData.contentType,
-          file_type: 'audio/mpeg'  // Garantir que o tipo de arquivo seja reconhecido
+          file_type: 'audio/mpeg',  // Garantir que o tipo de arquivo seja reconhecido
+          content: `Transcrição: ${transcricao || '[Transcrição indisponível]'}`  // Adicionar no campo content para compatibilidade
         };
         
         // Adicionar transcrição aos content_attributes para compatibilidade com diferentes formatos
@@ -232,6 +233,14 @@ async function processAudios(audios) {
           audioProcessado.content_attributes = {};
         }
         audioProcessado.content_attributes.transcription = transcricao || '[Transcrição indisponível]';
+        audioProcessado.content_attributes.transcript = transcricao || '[Transcrição indisponível]';
+        
+        // Log para debug
+        console.log(`✅ Áudio ${audio.id} processado com transcrição:`, {
+          transcricao: audioProcessado.transcricao?.substring(0, 50) + '...',
+          content: audioProcessado.content?.substring(0, 50) + '...',
+          content_attributes: audioProcessado.content_attributes
+        });
         
         // Adicionar ao array de áudios processados
         processedAudios.push(audioProcessado);
@@ -246,13 +255,24 @@ async function processAudios(audios) {
         });
         
         // Adiciona o áudio mesmo sem transcrição
-        processedAudios.push({
+        const audioComErro = {
           ...audio,
           base64: base64Data,
           transcricao: '[Erro ao processar áudio]',
+          transcript: '[Erro ao processar áudio]',
+          content: 'Transcrição: [Erro ao processar áudio]',
           processado: false,
           erro: processError.message
-        });
+        };
+        
+        // Adicionar transcrição aos content_attributes mesmo com erro
+        if (!audioComErro.content_attributes) {
+          audioComErro.content_attributes = {};
+        }
+        audioComErro.content_attributes.transcription = '[Erro ao processar áudio]';
+        audioComErro.content_attributes.transcript = '[Erro ao processar áudio]';
+        
+        processedAudios.push(audioComErro);
       }
       
     } catch (error) {

@@ -312,7 +312,23 @@ async function attachFileToDeal(dealId, fileName, fileContent, fileType) {
         };
         
         const cleanMimeType = fileType.split(';')[0].trim();
-        fileExt = mimeToExt[cleanMimeType] || cleanMimeType.split('/').pop().replace(/[^a-z0-9]/g, '');
+        
+        // Melhorar a detecção de extensões
+        if (cleanMimeType.includes('image')) {
+          fileExt = cleanMimeType.includes('png') ? 'png' : 'jpg';
+        } else if (cleanMimeType.includes('word') || cleanMimeType.includes('document')) {
+          fileExt = 'docx';
+        } else if (cleanMimeType.includes('sheet') || cleanMimeType.includes('excel')) {
+          fileExt = 'xlsx';
+        } else if (cleanMimeType.includes('pdf')) {
+          fileExt = 'pdf';
+        } else if (cleanMimeType.includes('text')) {
+          fileExt = 'txt';
+        } else {
+          // Fallback para o mapeamento ou extensão genérica
+          fileExt = mimeToExt[cleanMimeType] || cleanMimeType.split('/').pop().replace(/[^a-z0-9]/g, '');
+        }
+        
         fileNameWithExt = `${fileName}.${fileExt}`;
         console.log(`Adicionada extensão .${fileExt} ao nome do arquivo: ${fileNameWithExt}`);
       }
