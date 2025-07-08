@@ -89,6 +89,10 @@ async function createFullDeal(contactData, messagesByType, processedImages = [],
     }
     
     // 5. Criar nota com histórico da conversa
+    // Substituir a lista de áudios original pela lista processada com transcrição
+    if (processedAudios && processedAudios.length > 0) {
+      messagesByType.audio = processedAudios;
+    }
     console.log('Criando nota com histórico da conversa');
     const allMessages = combineMessages(messagesByType);
     const notaTexto = formatNotaTexto(allMessages);
