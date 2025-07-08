@@ -42,7 +42,7 @@ services:
       echo "Instalando dependências do Node.js..." && \
       npm install --omit=optional --no-audit --no-fund && \
       echo "Iniciando aplicação..." && \
-      npm run start:new'
+      npm run start'
     
     # Configurações de rede
     networks:

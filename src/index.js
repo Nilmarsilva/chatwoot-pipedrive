@@ -47,6 +47,9 @@ app.get('/', (req, res) => {
 // Registrar rotas do webhook
 app.use('/webhook', webhookRoutes);
 
+// Registrar rota alternativa para compatibilidade
+app.use('/api/webhook', webhookRoutes);
+
 // Iniciar o servidor
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
