@@ -267,7 +267,42 @@ async function processWebhook(webhookData) {
     }
     
     // Buscar mensagens da conversa
-    const messages = await chatwootApi.getChatwootMessages(conversationId);
+    const config = require('../config/config');
+    
+    // Tentar obter o ID da conta das configurações ou do payload do webhook
+    let accountId = config.chatwoot.accountId;
+    
+    // Se não estiver nas configurações, tentar extrair do payload do webhook
+    if (!accountId) {
+      console.log('ID da conta do Chatwoot não encontrado nas configurações. Tentando extrair do payload...');
+      
+      // Tentar extrair o ID da conta de vários locais possíveis no payload
+      // Analisando o payload, vemos que o account_id está dentro das mensagens
+      if (webhookData.messages && webhookData.messages.length > 0 && webhookData.messages[0].account_id) {
+        accountId = webhookData.messages[0].account_id;
+        console.log(`ID da conta encontrado nas mensagens: ${accountId}`);
+      } else {
+        // Tentar outros locais possíveis
+        accountId = webhookData.account_id || 
+                   webhookData.account?.id ||
+                   webhookData.meta?.account_id;
+      }
+      
+      if (accountId) {
+        console.log(`ID da conta extraído do payload: ${accountId}`);
+      } else {
+        console.error('ID da conta do Chatwoot não encontrado no payload nem nas configurações');
+        // Registrar o payload completo para diagnóstico
+        console.error('Payload do webhook:', JSON.stringify(webhookData, null, 2));
+        return {
+          status: 'erro',
+          motivo: 'ID da conta do Chatwoot não encontrado'
+        };
+      }
+    }
+    
+    console.log(`Buscando mensagens da conversa ${conversationId} na conta ${accountId}`);
+    const messages = await chatwootApi.getChatwootMessages(conversationId, accountId);
     
     // Filtrar e organizar mensagens
     const { messagesByType } = require('./messageService').filterMessages(messages);

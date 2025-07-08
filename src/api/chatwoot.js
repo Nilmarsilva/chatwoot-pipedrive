@@ -43,6 +43,18 @@ async function getChatwootMessages(conversationId, accountId) {
       
       console.log(`[Chatwoot] URL da requisição: ${fullUrl}`);
       
+      // Verificar se o token de API está configurado
+      if (!config.chatwoot.apiKey) {
+        console.error('[Chatwoot] Token de API não configurado');
+        throw new Error('Token de API do Chatwoot não configurado');
+      }
+      
+      // Log para debug (sem mostrar o token completo)
+      const apiKeyMasked = config.chatwoot.apiKey ? 
+        `${config.chatwoot.apiKey.substring(0, 4)}...${config.chatwoot.apiKey.substring(config.chatwoot.apiKey.length - 4)}` : 
+        'undefined';
+      console.log(`[Chatwoot] Usando token de API: ${apiKeyMasked}`);
+      
       const response = await axios.get(
         fullUrl,
         {
@@ -134,12 +146,27 @@ async function getChatwootMessages(conversationId, accountId) {
  */
 async function updateChatwootContact(contactId, dealId) {
   try {
+    // Verificar se o token de API está configurado
+    if (!config.chatwoot.apiKey) {
+      console.error('[Chatwoot] Token de API não configurado');
+      throw new Error('Token de API do Chatwoot não configurado');
+    }
+    
+    // Verificar se o ID da conta está configurado
+    if (!config.chatwoot.accountId) {
+      console.error('[Chatwoot] ID da conta não configurado');
+      throw new Error('ID da conta do Chatwoot não configurado');
+    }
+    
     const baseUrl = config.chatwoot.baseUrl.endsWith('/') 
       ? config.chatwoot.baseUrl 
       : `${config.chatwoot.baseUrl}/`;
     
+    const apiUrl = `${baseUrl}api/v1/accounts/${config.chatwoot.accountId}/contacts/${contactId}`;
+    console.log(`[Chatwoot] Atualizando contato: ${apiUrl}`);
+    
     await axios.put(
-      `${baseUrl}api/v1/accounts/${config.chatwoot.accountId}/contacts/${contactId}`,
+      apiUrl,
       {
         custom_attributes: {
           id_deal_pipedrive: dealId
@@ -173,6 +200,18 @@ async function updateChatwootContact(contactId, dealId) {
  */
 async function getChatwootConversation(conversationId, accountId) {
   try {
+    // Verificar se o token de API está configurado
+    if (!config.chatwoot.apiKey) {
+      console.error('[Chatwoot] Token de API não configurado');
+      throw new Error('Token de API do Chatwoot não configurado');
+    }
+    
+    // Verificar se o ID da conta foi fornecido
+    if (!accountId) {
+      console.error('[Chatwoot] ID da conta não fornecido');
+      throw new Error('ID da conta do Chatwoot não fornecido');
+    }
+    
     const baseUrl = config.chatwoot.baseUrl.endsWith('/') 
       ? config.chatwoot.baseUrl 
       : `${config.chatwoot.baseUrl}/`;
@@ -180,17 +219,25 @@ async function getChatwootConversation(conversationId, accountId) {
     const apiPath = `api/v1/accounts/${accountId}/conversations/${conversationId}`.replace(/^\/+|\/+$/g, '');
     const fullUrl = `${baseUrl}${apiPath}`;
     
+    console.log(`[Chatwoot] Buscando conversa: ${fullUrl}`);
+    
+    // Log para debug (sem mostrar o token completo)
+    const apiKeyMasked = config.chatwoot.apiKey ? 
+      `${config.chatwoot.apiKey.substring(0, 4)}...${config.chatwoot.apiKey.substring(config.chatwoot.apiKey.length - 4)}` : 
+      'undefined';
+    console.log(`[Chatwoot] Usando token de API: ${apiKeyMasked}`);
+    
     const response = await axios.get(
       fullUrl,
       {
         headers: {
           'api_access_token': config.chatwoot.apiKey,
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'User-Agent': 'chatwoot-pipedrive/1.0'
         }
       }
     );
-    
     return response.data;
   } catch (error) {
     console.error('Erro ao buscar conversa no Chatwoot:', error.message);
