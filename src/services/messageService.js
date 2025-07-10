@@ -41,7 +41,7 @@ function filterMessages(messages) {
       if (msg.sender) {
         if (msg.sender.type === 'user' || msg.sender.type === 'agent') {
           senderType = 'Atendente';
-          senderName = msg.sender.name || 'Atendente';
+          senderName = 'Atendente';
         } else if (msg.sender.type === 'contact') {
           senderName = msg.sender.name || 'Cliente';
         }
