@@ -48,6 +48,15 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ status: 'erro', motivo: 'Formato de webhook não suportado' });
     }
     
+    // -------------------------------------------------------------
+    // Guarda: ignorar totalmente se a conta (account_id) for 2
+    // -------------------------------------------------------------
+    const accountIdPayload = webhookData.account_id || webhookData.account?.id || webhookData.meta?.account_id || webhookData.conversation?.account_id;
+    if (Number(accountIdPayload) === 2) {
+      console.log('Webhook proveniente da conta 2 detectado – ignorando processamento.');
+      return res.json({ status: 'ignorado', motivo: 'Conta 2 configurada para não processar' });
+    }
+    
     // Verificar se é um evento válido (mensagem criada ou status de conversa alterado)
     const isMessageEvent = webhookData.event === 'message_created';
     const isStatusChangeEvent = webhookData.event === 'conversation_status_changed';
