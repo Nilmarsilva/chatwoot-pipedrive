@@ -41,7 +41,7 @@ function filterMessages(messages) {
       if (msg.sender) {
         if (msg.sender.type === 'user' || msg.sender.type === 'agent') {
           senderType = 'Atendente';
-          senderName = 'Atendente';
+          senderName = msg.sender.name || 'Atendente';
         } else if (msg.sender.type === 'contact') {
           senderName = msg.sender.name || 'Cliente';
         }
@@ -347,22 +347,29 @@ function formatNotaTexto(messages) {
  * @returns {Array} Lista combinada de mensagens
  */
 function combineMessages(messagesByType) {
+  // Função util para normalizar timestamp (segundos)
+  const normalizeTs = (ts) => {
+    if (!ts) return Math.floor(Date.now() / 1000);
+    return ts > 1e12 ? Math.floor(ts / 1000) : ts; // se vier em ms, converte
+  };
   const combinedMessages = [];
   
   // Adicionar mensagens de texto
   messagesByType.text.forEach(msg => {
     combinedMessages.push({
-      ...msg,
-      type: 'text'
-    });
+       ...msg,
+       type: 'text',
+       created_at: normalizeTs(msg.created_at)
+     });
   });
   
   // Adicionar imagens
   messagesByType.image.forEach(msg => {
     combinedMessages.push({
-      ...msg,
-      type: 'image'
-    });
+       ...msg,
+       type: 'image',
+       created_at: normalizeTs(msg.created_at)
+     });
   });
   
   // Adicionar áudios
@@ -378,8 +385,9 @@ function combineMessages(messagesByType) {
     
     // Garantir que a transcrição seja passada corretamente
     const audioMsg = {
-      ...msg,
-      type: 'audio',
+       ...msg,
+       type: 'audio',
+       created_at: normalizeTs(msg.created_at),
       // Garantir que a transcrição esteja disponível em múltiplos campos para compatibilidade
       transcricao: msg.transcricao || msg.transcript || 
                   (msg.content_attributes && msg.content_attributes.transcription) || 
@@ -407,15 +415,15 @@ function combineMessages(messagesByType) {
   // Adicionar arquivos
   messagesByType.file.forEach(msg => {
     combinedMessages.push({
-      ...msg,
-      type: 'file'
-    });
+       ...msg,
+       type: 'file',
+       created_at: normalizeTs(msg.created_at)
+     });
   });
   
-  // Ordenar por data de criação
-  combinedMessages.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
-  
-  return combinedMessages;
+  // Ordenar por data (mais antigo primeiro)
+   combinedMessages.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+   return combinedMessages;
 }
 
 module.exports = {
